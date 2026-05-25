@@ -222,6 +222,7 @@
         <button class="pill" data-status="all" aria-selected="true">Any read status</button>
         <button class="pill" data-status="read">Reviewed</button>
         <button class="pill" data-status="unread">Not reviewed</button>
+        <button class="pill" data-status="untitled">Needs title</button>
       </div>
     </div>
     <div id="bookGrid" class="book-grid"></div>
@@ -269,15 +270,15 @@
       </div>
 
       <div id="manual-photo" class="manual-section">
-        <p class="muted">For books without barcodes (board books, older editions). Snap the cover — we'll save it as the book's image — then type the title and author.</p>
+        <p class="muted">For books without barcodes (board books, older editions). Snap the cover and save — title/author are <b>optional</b>. Photo-only saves go directly to your sticky default location, so you can batch through a stack and add titles later.</p>
         <label>Cover photo</label>
         <input type="file" id="coverPhotoInput" accept="image/*" capture="environment" />
         <div id="coverPhotoPreview" class="photo-preview" style="display:none;"></div>
-        <label>Title</label>
-        <input type="text" id="photoTitle" placeholder="Goodnight Moon" />
-        <label>Author</label>
+        <label>Title <span class="muted" style="font-weight:normal;">(optional)</span></label>
+        <input type="text" id="photoTitle" placeholder="Leave blank to batch-process later" />
+        <label>Author <span class="muted" style="font-weight:normal;">(optional)</span></label>
         <input type="text" id="photoAuthor" placeholder="Margaret Wise Brown" />
-        <button class="primary" id="btnSavePhotoBook" style="margin-top:10px;">Add to library</button>
+        <button class="primary" id="btnSavePhotoBook" style="margin-top:10px;">Save photo</button>
       </div>
 
       <div id="manual-text" class="manual-section">
@@ -475,14 +476,81 @@ function toast(msg) {
 }
 
 /* ===== MODAL ===== */
+let _suppressBackdropClose = false;
 function openModal(html) {
   document.getElementById('modalContent').innerHTML = html;
   document.getElementById('modal').classList.add('active');
 }
 function closeModal() { document.getElementById('modal').classList.remove('active'); }
 document.getElementById('modal').addEventListener('click', (e) => {
-  if (e.target.id === 'modal') closeModal();
+  if (e.target.id === 'modal' && !_suppressBackdropClose) closeModal();
 });
+
+/* Destructive type-to-confirm modal. Returns a Promise<boolean>. */
+function confirmDestructive(opts) {
+  _suppressBackdropClose = true;
+  return new Promise(resolve => {
+    let resolved = false;
+    const done = (val) => {
+      if (resolved) return;
+      resolved = true;
+      _suppressBackdropClose = false;
+      closeModal();
+      resolve(val);
+    };
+    openModal(`
+      <button class="close" id="cdClose">×</button>
+      <h2>${escapeHtml(opts.title)}</h2>
+      ${opts.message}
+      <label style="margin-top:14px;">Type <code style="background:#ece2d2; padding:2px 6px; border-radius:4px; font-family: ui-monospace, monospace;">${escapeHtml(opts.requireText)}</code> to confirm</label>
+      <input type="text" id="cdInput" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+      <div class="row" style="margin-top:14px;">
+        <button class="ghost" id="cdCancel">Cancel</button>
+        <button class="danger" id="cdGo" disabled>${escapeHtml(opts.dangerLabel)}</button>
+      </div>
+    `);
+    const input = document.getElementById('cdInput');
+    const go = document.getElementById('cdGo');
+    input.addEventListener('input', () => { go.disabled = input.value.trim() !== opts.requireText; });
+    go.onclick = () => done(true);
+    document.getElementById('cdCancel').onclick = () => done(false);
+    document.getElementById('cdClose').onclick = () => done(false);
+    setTimeout(() => input.focus(), 100);
+  });
+}
+
+/* Import-time chooser. Returns 'merge' | 'replace' | 'cancel'. */
+function askMergeOrReplace() {
+  _suppressBackdropClose = true;
+  return new Promise(resolve => {
+    let resolved = false;
+    const done = (val) => {
+      if (resolved) return;
+      resolved = true;
+      _suppressBackdropClose = false;
+      if (val !== 'replace') closeModal();  // replace path will open its own confirm modal next
+      resolve(val);
+    };
+    openModal(`
+      <button class="close" id="cmrClose">×</button>
+      <h2>Importing — how to combine?</h2>
+      <p class="muted">Your imported file vs. this device's current data.</p>
+      <h3 style="margin-top:14px;">Merge (safe)</h3>
+      <p style="margin:4px 0;">Adds new books and <b>sums read counts</b> per kid for books on both devices. Nothing is lost.</p>
+      <button class="primary" id="cmrMerge">Merge them</button>
+      <h3 style="margin-top:18px; color: var(--bad);">Replace (destructive)</h3>
+      <p style="margin:4px 0;">Deletes all current data on this device and loads <b>only</b> the imported file. Cannot be undone — requires typed confirmation.</p>
+      <button class="danger" id="cmrReplace">Replace everything…</button>
+      <div style="margin-top:18px;">
+        <button class="ghost" id="cmrCancel">Cancel import</button>
+      </div>
+    `);
+    document.getElementById('cmrMerge').onclick = () => done('merge');
+    document.getElementById('cmrCancel').onclick = () => done('cancel');
+    document.getElementById('cmrClose').onclick = () => done('cancel');
+    document.getElementById('cmrReplace').onclick = () => done('replace');
+  });
+}
 
 /* ===== KIDS ===== */
 function renderKids() {
@@ -598,7 +666,9 @@ function renderLibrary() {
     });
   }
 
-  if (filterStatus !== 'all' && filterKid !== 'all') {
+  if (filterStatus === 'untitled') {
+    books = books.filter(bk => !bk.title || !bk.title.trim());
+  } else if (filterStatus !== 'all' && filterKid !== 'all') {
     books = books.filter(bk => {
       const hasReview = state.reviews.some(r => r.kidId === filterKid && r.bookIsbn === bk.isbn);
       return filterStatus === 'read' ? hasReview : !hasReview;
@@ -629,9 +699,9 @@ function renderLibrary() {
     return `
       <div class="book ${dim ? 'backstock' : ''}" onclick="openBook('${bk.isbn}')">
         <span class="corner-badge ${cornerClass}">${cornerText}</span>
-        <div class="cover" style="${coverStyle}">${bk.cover ? '' : escapeHtml(bk.title)}</div>
+        <div class="cover" style="${coverStyle}">${bk.cover ? '' : escapeHtml(bk.title || '(no title)')}</div>
         <div class="meta">
-          <div class="title">${escapeHtml(bk.title)}</div>
+          <div class="title">${bk.title ? escapeHtml(bk.title) : '<i style="color:var(--muted);">(no title yet)</i>'}</div>
           <div class="author">${escapeHtml((bk.authors||[]).join(', '))}</div>
           <div class="badges">
             ${avg ? `<span class="badge">★ ${avg}</span>` : ''}
@@ -680,8 +750,9 @@ window.openBook = function(isbn) {
     <div style="display:flex; gap:14px; align-items:flex-start;">
       <div class="cover" style="width: 90px; height: 135px; aspect-ratio: auto; flex: 0 0 90px; background-size: cover; ${bk.cover ? `background-image:url('${escapeAttr(bk.cover)}');` : 'background:#ece2d2;'} border-radius: 8px;"></div>
       <div style="flex:1; min-width:0;">
-        <h2 style="margin:0;">${escapeHtml(bk.title)}</h2>
+        <h2 style="margin:0;">${bk.title ? escapeHtml(bk.title) : '<i style="color:var(--muted);">(no title yet)</i>'}</h2>
         <div class="muted" style="margin-top:2px;">${escapeHtml((bk.authors||[]).join(', '))}${bk.publishYear ? ' · ' + escapeHtml(bk.publishYear) : ''}</div>
+        ${!bk.title || !((bk.authors||[]).length) ? `<button class="ghost small" style="margin-top:6px;" onclick="editBookMeta('${isbn}')">+ Add title &amp; author</button>` : `<button class="ghost small" style="margin-top:6px;" onclick="editBookMeta('${isbn}')">Edit title / author</button>`}
         <div class="pill-row" style="margin-top:6px;">
           ${locationBadge}
           <span class="badge reads">📖 ${totalReads(bk)} reads total</span>
@@ -720,6 +791,36 @@ window.openBook = function(isbn) {
       <button class="danger small" onclick="deleteBook('${isbn}')">Remove book from library</button>
     </div>
   `);
+};
+
+window.editBookMeta = function(isbn) {
+  const bk = state.books.find(b => b.isbn === isbn);
+  if (!bk) return;
+  openModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>Edit title &amp; author</h2>
+    ${bk.cover ? `<div class="cover" style="width:90px; height:135px; aspect-ratio:auto; background:url('${escapeAttr(bk.cover)}') center/cover; border-radius:8px; margin-bottom:10px;"></div>` : ''}
+    <label>Title</label>
+    <input type="text" id="ebmTitle" value="${escapeAttr(bk.title || '')}" />
+    <label>Author</label>
+    <input type="text" id="ebmAuthor" value="${escapeAttr((bk.authors||[]).join(', '))}" />
+    <div class="row" style="margin-top:14px;">
+      <button class="primary" onclick="saveBookMeta('${isbn}')">Save</button>
+      <button class="ghost" onclick="openBook('${isbn}')">Back</button>
+    </div>
+  `);
+  setTimeout(() => document.getElementById('ebmTitle').focus(), 100);
+};
+window.saveBookMeta = function(isbn) {
+  const bk = state.books.find(b => b.isbn === isbn);
+  if (!bk) return;
+  bk.title = document.getElementById('ebmTitle').value.trim();
+  const authorStr = document.getElementById('ebmAuthor').value.trim();
+  bk.authors = authorStr ? authorStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+  saveState();
+  openBook(isbn);
+  renderLibrary();
+  toast('Saved');
 };
 
 window.bumpRead = function(isbn, kidId) {
@@ -1130,13 +1231,40 @@ function fileToCompressedDataUrl(file, maxW, maxH, quality) {
 document.getElementById('btnSavePhotoBook').addEventListener('click', () => {
   const title = document.getElementById('photoTitle').value.trim();
   const author = document.getElementById('photoAuthor').value.trim();
-  if (!title) { toast('Title required'); return; }
-  saveManualBook({
-    title,
-    author,
-    cover: pendingPhotoDataUrl
-  });
-  // reset
+  if (!pendingPhotoDataUrl && !title) {
+    toast('Take a photo or type a title');
+    return;
+  }
+  // Batch-friendly: photo-only saves bypass the location preview and use the
+  // sticky default. This lets you snap and save in one tap per book.
+  if (!title && !author && pendingPhotoDataUrl) {
+    const choice = state.settings.lastScanChoice || 'owned-backstock';
+    const { source, location } = parseScanChoice(choice);
+    const fakeIsbn = 'manual-' + uid();
+    state.books.push({
+      isbn: fakeIsbn,
+      title: '',
+      authors: [],
+      cover: pendingPhotoDataUrl,
+      subjects: [],
+      publishYear: null,
+      addedDate: new Date().toISOString(),
+      source, location,
+      placedOnShelfAt: location === 'accessible' ? new Date().toISOString() : null,
+      readsByKid: {}
+    });
+    saveState();
+    renderRecentScans();
+    toast(`📸 Photo saved (${source === 'library' ? 'library' : location})`);
+  } else {
+    // Title or author provided — go through the normal location-choice preview.
+    saveManualBook({
+      title: title || '',
+      author,
+      cover: pendingPhotoDataUrl
+    });
+  }
+  // Reset the form for the next snap
   document.getElementById('photoTitle').value = '';
   document.getElementById('photoAuthor').value = '';
   document.getElementById('coverPhotoInput').value = '';
@@ -1520,7 +1648,18 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
     let data = JSON.parse(text);
     data = migrate(data);
     if (!data.kids || !data.books) throw new Error('Not a library file');
-    if (confirm('Replace your current library with the imported file? (Cancel to merge, summing read counts for books on both devices)')) {
+    const choice = await askMergeOrReplace();
+    if (choice === 'cancel') { e.target.value = ''; return; }
+    if (choice === 'replace') {
+      const ok = await confirmDestructive({
+        title: 'Replace everything on this device?',
+        message: `
+          <p>This deletes <b>all current data on this device</b> (kids, books, reviews, read counts) and loads <b>only</b> the imported file.</p>
+          <p class="muted">Cannot be undone. If you wanted to keep your current data, cancel and choose <b>Merge</b> instead.</p>`,
+        requireText: 'replace everything',
+        dangerLabel: 'Yes, replace it all'
+      });
+      if (!ok) { e.target.value = ''; return; }
       state = Object.assign(structuredClone(DEFAULT_STATE), data);
     } else {
       // MERGE: for shared books, sum readsByKid and take latest stint
@@ -1558,8 +1697,16 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
   }
   e.target.value = '';
 });
-document.getElementById('btnClear').addEventListener('click', () => {
-  if (!confirm('This will permanently delete all your kids, books, and reviews. Continue?')) return;
+document.getElementById('btnClear').addEventListener('click', async () => {
+  const ok = await confirmDestructive({
+    title: 'Clear all data on this device?',
+    message: `
+      <p>This permanently deletes <b>everything</b> on this device — all kids, books, reviews, and per-kid read counts.</p>
+      <p class="muted">If you have an exported JSON backup, you can restore from it later via Import. Otherwise this <b>cannot be undone</b>.</p>`,
+    requireText: 'delete everything',
+    dangerLabel: 'Yes, delete it all'
+  });
+  if (!ok) return;
   state = structuredClone(DEFAULT_STATE);
   saveState();
   renderKids(); renderLibrary();
