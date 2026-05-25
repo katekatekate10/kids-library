@@ -848,12 +848,22 @@ async function lookupAndAdd(isbn) {
         <button class="ghost" id="btnCancelAdd">Cancel</button>
       </div>
       <div id="wrongBookForm" style="display:none; margin-top:10px;">
-        <label>Type the ISBN from the back of the book</label>
+        <h3 style="margin-top:0;">Option 1: Look up by a different ISBN</h3>
         <div class="row">
           <input type="text" inputmode="numeric" id="correctIsbn" value="${escapeAttr(isbn)}" />
           <button class="secondary" id="btnRetryLookup">Look up</button>
         </div>
         <p class="muted" style="font-size:12px; margin-top:6px;">ISBN-13 is the 13-digit number that starts with 978 or 979, printed under the barcode.</p>
+
+        <h3 style="margin-top:14px;">Option 2: Just fix the title &amp; author</h3>
+        <p class="muted" style="font-size:12px;">Use this when the ISBN is right but the database returned wrong metadata. Keeps the scanned ISBN, replaces just the title and author.</p>
+        <label>Title</label>
+        <input type="text" id="overrideTitle" value="${escapeAttr(book.title || '')}" />
+        <label>Author</label>
+        <input type="text" id="overrideAuthor" value="${escapeAttr((book.authors||[]).join(', '))}" />
+        <div class="row" style="margin-top:8px;">
+          <button class="primary" id="btnSaveOverride">Save with these</button>
+        </div>
       </div>
     </div>`;
   document.getElementById('btnConfirmAdd').onclick = () => {
@@ -882,6 +892,31 @@ async function lookupAndAdd(isbn) {
     if (!newIsbn || newIsbn === isbn) { toast('Enter a different ISBN'); return; }
     document.getElementById('lookupResult').innerHTML = '';
     lookupAndAdd(newIsbn);
+  };
+  document.getElementById('btnSaveOverride').onclick = () => {
+    const newTitle = document.getElementById('overrideTitle').value.trim();
+    const newAuthor = document.getElementById('overrideAuthor').value.trim();
+    if (!newTitle) { toast('Title is required'); return; }
+    const loc = document.getElementById('addLocation').value;
+    const fixed = {
+      ...book,
+      title: newTitle,
+      authors: newAuthor ? newAuthor.split(',').map(s => s.trim()).filter(Boolean) : [],
+      // Drop the wrong cover and subjects — they came from the wrong record
+      cover: null,
+      subjects: [],
+      addedDate: new Date().toISOString(),
+      location: loc,
+      placedOnShelfAt: loc === 'accessible' ? new Date().toISOString() : null,
+      readsByKid: {}
+    };
+    state.books.push(fixed);
+    state.settings.lastScanLocation = loc;
+    saveState();
+    document.getElementById('lookupResult').innerHTML = '';
+    renderRecentScans();
+    toast(`Added (overridden): ${newTitle}`);
+    document.getElementById('manualIsbn').value = '';
   };
 }
 
