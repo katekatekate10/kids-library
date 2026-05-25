@@ -1,0 +1,1230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#f7f1e6" />
+<title>Kids' Library</title>
+<script src="https://unpkg.com/@zxing/browser@0.1.5/umd/index.min.js" defer></script>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f7f1e6;
+    --card: #ffffff;
+    --ink: #2a2118;
+    --muted: #7a6f63;
+    --accent: #b85c38;
+    --accent-soft: #f3d9c8;
+    --teal: #235e6f;
+    --teal-soft: #d6e8ec;
+    --good: #4f7a3a;
+    --bad: #b53a3a;
+    --border: #e7ddd0;
+    --shadow: 0 1px 2px rgba(40,30,20,0.06), 0 4px 12px rgba(40,30,20,0.04);
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif; font-size: 16px; line-height: 1.45; }
+  body { min-height: 100vh; padding-bottom: 90px; }
+  header { padding: 18px 18px 8px 18px; }
+  header h1 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
+  header .tagline { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  main { padding: 8px 14px 24px 14px; max-width: 720px; margin: 0 auto; }
+  .tab { display: none; }
+  .tab.active { display: block; }
+  nav.tabs {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: rgba(247,241,230,0.97);
+    backdrop-filter: saturate(160%) blur(8px);
+    border-top: 1px solid var(--border);
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom)) 4px;
+    z-index: 50;
+  }
+  nav.tabs button {
+    background: transparent; border: 0; color: var(--muted);
+    padding: 8px 2px; font-size: 11px; font-weight: 500; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    border-radius: 10px;
+  }
+  nav.tabs button .ico { font-size: 20px; line-height: 1; }
+  nav.tabs button[aria-selected="true"] { color: var(--accent); background: var(--accent-soft); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); margin-bottom: 12px; }
+  .card h2 { margin: 0 0 8px 0; font-size: 17px; }
+  .card h3 { margin: 0 0 6px 0; font-size: 15px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  button.primary, button.secondary, button.ghost, .btn {
+    border: 0; border-radius: 999px; padding: 11px 18px; font-size: 15px; font-weight: 600;
+    cursor: pointer; transition: transform 0.05s ease;
+    display: inline-flex; align-items: center; gap: 6px; justify-content: center;
+  }
+  button.primary { background: var(--accent); color: white; }
+  button.primary:active { transform: scale(0.98); }
+  button.secondary { background: var(--teal); color: white; }
+  button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  button.small { padding: 6px 12px; font-size: 13px; }
+  button.danger { background: transparent; color: var(--bad); border: 1px solid var(--bad); }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 8px 0 4px 0; font-weight: 600; }
+  input[type=text], input[type=number], input[type=date], textarea, select {
+    width: 100%; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--border); background: white; color: var(--ink);
+    font-size: 16px; font-family: inherit;
+  }
+  textarea { resize: vertical; min-height: 70px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row > * { flex: 1 1 auto; }
+  .book-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 12px;
+  }
+  .book {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; cursor: pointer; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; position: relative;
+  }
+  .book.backstock { opacity: 0.75; }
+  .book .cover {
+    aspect-ratio: 2/3; background: #ece2d2 center/cover no-repeat;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 11px; text-align: center; padding: 6px;
+  }
+  .book .meta { padding: 8px 10px; flex: 1; display: flex; flex-direction: column; }
+  .book .title { font-size: 13px; font-weight: 600; line-height: 1.25; }
+  .book .author { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .book .badges { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+  .badge { font-size: 10px; padding: 2px 6px; border-radius: 999px; font-weight: 600; background: var(--accent-soft); color: var(--accent); }
+  .badge.teal { background: var(--teal-soft); color: var(--teal); }
+  .badge.shelf { background: #e1f0d5; color: #4f7a3a; }
+  .badge.backstock { background: #ece2d2; color: #7a6f63; }
+  .badge.reads { background: #fff3df; color: #a36b1c; }
+  .corner-badge {
+    position: absolute; top: 4px; right: 4px; z-index: 2;
+    background: rgba(255,255,255,0.92); border-radius: 6px;
+    padding: 1px 5px; font-size: 10px; font-weight: 700;
+  }
+  .corner-badge.shelf { color: #4f7a3a; }
+  .corner-badge.backstock { color: #7a6f63; }
+  .kid-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px dashed var(--border); }
+  .kid-row:first-child { border-top: 0; }
+  .kid-avatar { width: 38px; height: 38px; border-radius: 999px; background: var(--teal-soft); color: var(--teal); display: flex; align-items: center; justify-content: center; font-weight: 700; flex: 0 0 38px; }
+  .kid-info { flex: 1; min-width: 0; }
+  .kid-name { font-weight: 600; }
+  .kid-meta { font-size: 12px; color: var(--muted); }
+  #scanWrap { position: relative; background: #111; border-radius: var(--radius); overflow: hidden; aspect-ratio: 4/3; display: none; }
+  #scanWrap.active { display: block; }
+  #video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .reticle {
+    position: absolute; inset: 18% 12%; border: 3px dashed rgba(255,255,255,0.75);
+    border-radius: 12px; pointer-events: none;
+  }
+  .scan-hint { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; color: white; font-size: 13px; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(20,15,10,0.45); z-index: 100;
+    display: none; align-items: flex-end; justify-content: center;
+  }
+  .modal-backdrop.active { display: flex; }
+  .modal {
+    background: var(--bg); width: 100%; max-width: 600px;
+    border-radius: 18px 18px 0 0; padding: 18px;
+    max-height: 92vh; overflow-y: auto;
+    box-shadow: 0 -10px 30px rgba(0,0,0,0.2);
+  }
+  @media (min-width: 600px) {
+    .modal-backdrop { align-items: center; padding: 20px; }
+    .modal { border-radius: 18px; }
+  }
+  .modal h2 { margin: 0 0 4px 0; }
+  .modal .close { background: transparent; border: 0; font-size: 22px; color: var(--muted); cursor: pointer; padding: 4px 8px; float: right; }
+  .stars { display: flex; gap: 4px; align-items: center; font-size: 26px; }
+  .stars .s { cursor: pointer; color: #d8c9b5; user-select: none; }
+  .stars .s.on { color: #d99a32; }
+  .review { padding: 10px 0; border-top: 1px dashed var(--border); }
+  .review:first-child { border-top: 0; }
+  .review .head { display: flex; justify-content: space-between; align-items: center; }
+  .review .who { font-weight: 600; }
+  .review .when { font-size: 12px; color: var(--muted); }
+  .review .stars-small { color: #d99a32; font-size: 14px; }
+  .review .notes { font-size: 14px; margin-top: 4px; color: #45382c; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .empty { text-align: center; padding: 30px 20px; color: var(--muted); }
+  .empty .big-ico { font-size: 40px; }
+  .pill-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .pill { background: var(--card); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  .pill[aria-selected="true"] { background: var(--teal); color: white; border-color: var(--teal); }
+  .toast {
+    position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: white; padding: 10px 16px; border-radius: 999px;
+    font-size: 14px; z-index: 200; opacity: 0; transition: opacity 0.2s ease;
+    pointer-events: none; max-width: 90%; text-align: center;
+  }
+  .toast.show { opacity: 1; }
+  pre.export {
+    background: #fff; border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px; font-size: 12px; white-space: pre-wrap; word-break: break-word;
+    max-height: 240px; overflow-y: auto;
+  }
+  /* rotate tab */
+  .rotate-item {
+    display: flex; gap: 10px; padding: 10px 0; border-top: 1px dashed var(--border);
+    align-items: flex-start;
+  }
+  .rotate-item:first-child { border-top: 0; }
+  .rotate-item .mini-cover {
+    width: 44px; height: 66px; flex: 0 0 44px;
+    background: #ece2d2 center/cover no-repeat; border-radius: 4px;
+  }
+  .rotate-item .info { flex: 1; min-width: 0; }
+  .rotate-item .info .t { font-weight: 600; font-size: 14px; line-height: 1.2; }
+  .rotate-item .info .a { font-size: 12px; color: var(--muted); }
+  .decision-row { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+  .decision-row button {
+    border: 1px solid var(--border); background: white; color: var(--muted);
+    padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+    cursor: pointer;
+  }
+  .decision-row button.sel-keep { background: var(--teal); color: white; border-color: var(--teal); }
+  .decision-row button.sel-hit { background: var(--good); color: white; border-color: var(--good); }
+  .decision-row button.sel-ignored { background: var(--bad); color: white; border-color: var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1>The Family Library</h1>
+  <div class="tagline">Scan • Review • Rotate • Recommend</div>
+</header>
+
+<main>
+  <!-- LIBRARY TAB -->
+  <section class="tab" id="tab-library">
+    <div class="card">
+      <h3>Filter by reader</h3>
+      <div class="pill-row" id="kidFilterRow">
+        <button class="pill" data-filter="all" aria-selected="true">All books</button>
+      </div>
+      <h3 style="margin-top:10px;">Status</h3>
+      <div class="pill-row">
+        <button class="pill" data-loc="all" aria-selected="true">All locations</button>
+        <button class="pill" data-loc="accessible">On shelf</button>
+        <button class="pill" data-loc="backstock">Backstock</button>
+      </div>
+      <div class="pill-row">
+        <button class="pill" data-status="all" aria-selected="true">Any read status</button>
+        <button class="pill" data-status="read">Reviewed</button>
+        <button class="pill" data-status="unread">Not reviewed</button>
+      </div>
+    </div>
+    <div id="bookGrid" class="book-grid"></div>
+    <div id="libEmpty" class="empty" style="display:none;">
+      <div class="big-ico">📚</div>
+      <p>No books match. Tap <b>Scan</b> at the bottom to add one.</p>
+    </div>
+  </section>
+
+  <!-- SCAN TAB -->
+  <section class="tab" id="tab-scan">
+    <div class="card">
+      <h2>Add a book</h2>
+      <p class="muted">Point the camera at the barcode (the one starting with 978…). On phones, the camera will ask permission the first time.</p>
+      <div id="scanWrap">
+        <video id="video" autoplay playsinline muted></video>
+        <div class="reticle"></div>
+        <div class="scan-hint">Center the barcode</div>
+      </div>
+      <div class="row" style="margin-top: 10px;">
+        <button class="primary" id="btnStartScan">📷 Scan barcode</button>
+        <button class="ghost" id="btnStopScan" style="display:none;">Stop</button>
+      </div>
+      <div id="scanFallback" class="muted" style="margin-top: 8px;"></div>
+    </div>
+
+    <div class="card">
+      <h3>Or enter ISBN manually</h3>
+      <div class="row">
+        <input type="text" inputmode="numeric" id="manualIsbn" placeholder="9780399226908" />
+        <button class="secondary" id="btnLookup">Look up</button>
+      </div>
+    </div>
+
+    <div id="lookupResult"></div>
+
+    <div class="card" id="recentScansCard" style="display:none;">
+      <h3>Recently added</h3>
+      <div id="recentScans"></div>
+    </div>
+  </section>
+
+  <!-- KIDS TAB -->
+  <section class="tab" id="tab-kids">
+    <div class="card">
+      <h2>Your readers</h2>
+      <p class="muted">Add each kid with their age and interests — the more you note, the better the recommendations.</p>
+      <div id="kidsList"></div>
+      <button class="primary" id="btnAddKid" style="margin-top: 12px;">+ Add a kid</button>
+    </div>
+  </section>
+
+  <!-- ROTATE TAB -->
+  <section class="tab" id="tab-rotate">
+    <div class="card">
+      <h2>Plan a rotation</h2>
+      <p class="muted">Books currently on your accessible shelves. For each one, decide: <b>Keep</b> it on the shelf, mark it as a <b>Hit</b> (kids loved it, time to retire it before they get sick of it), or mark it <b>Ignored</b> (rotate it out — they didn't bite). Then I'll suggest backstock books to bring forward.</p>
+      <div id="rotateList"></div>
+      <div id="rotateEmpty" class="empty" style="display:none;">
+        <div class="big-ico">🪑</div>
+        <p>Nothing's on the accessible shelf right now. Tap a book in <b>Library</b> and move it onto the shelf.</p>
+      </div>
+      <div id="rotateActions" class="row" style="margin-top: 14px; display:none;">
+        <button class="primary" id="btnRotateBuildPrompt">✨ Build rotation prompt</button>
+        <button class="secondary" id="btnRotateApply">↩️ Apply moves</button>
+      </div>
+      <div id="rotatePromptOut"></div>
+    </div>
+  </section>
+
+  <!-- RECOMMEND TAB -->
+  <section class="tab" id="tab-recommend">
+    <div class="card">
+      <h2>Get recommendations</h2>
+      <p class="muted">Pick a kid (or "everyone") and I'll build a prompt to paste into chat. I'll use their reviews, age, interests, and read history to suggest new books — and I can search the web for current titles, award winners, and series next-reads.</p>
+      <div id="recommendKidPicker" class="pill-row"></div>
+      <div id="recommendOutput" style="margin-top: 12px;"></div>
+    </div>
+
+    <div class="card">
+      <h3>Backup &amp; sync</h3>
+      <p class="muted">Move your library between devices: export the JSON on one, import it on another.</p>
+      <div class="row" style="margin-top: 8px;">
+        <button class="ghost small" id="btnExport">⬇️ Export JSON</button>
+        <button class="ghost small" id="btnImport">⬆️ Import JSON</button>
+        <button class="danger small" id="btnClear">Clear all data</button>
+      </div>
+      <input type="file" id="importFile" accept="application/json" style="display:none;" />
+    </div>
+  </section>
+</main>
+
+<nav class="tabs" role="tablist">
+  <button data-tab="library" aria-selected="true"><span class="ico">📚</span>Library</button>
+  <button data-tab="scan"><span class="ico">📷</span>Scan</button>
+  <button data-tab="kids"><span class="ico">🧒</span>Kids</button>
+  <button data-tab="rotate"><span class="ico">🔄</span>Rotate</button>
+  <button data-tab="recommend"><span class="ico">✨</span>Recommend</button>
+</nav>
+
+<div class="modal-backdrop" id="modal">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===== STATE ===== */
+const STORAGE_KEY = 'kids_library_v1';
+const DEFAULT_STATE = {
+  version: 3,
+  kids: [],
+  books: [],
+  reviews: [],
+  settings: { lastScanLocation: 'backstock' }
+};
+
+function migrate(s) {
+  if (!s.version || s.version < 2) {
+    s.version = 2;
+    s.settings = s.settings || { lastScanLocation: 'backstock' };
+    s.books = (s.books || []).map(b => ({
+      ...b,
+      location: b.location || 'accessible',
+      placedOnShelfAt: b.placedOnShelfAt || b.addedDate,
+      readCount: b.readCount || 0
+    }));
+  }
+  if (s.version < 3) {
+    s.version = 3;
+    // Per-kid read counts. We can't attribute the old per-book readCount, so reset.
+    s.books = (s.books || []).map(b => {
+      const { readCount, ...rest } = b;
+      return { ...rest, readsByKid: b.readsByKid || {} };
+    });
+  }
+  return s;
+}
+
+function totalReads(bk) {
+  return Object.values(bk.readsByKid || {}).reduce((s, n) => s + n, 0);
+}
+
+let state = loadState();
+let filterKid = 'all';
+let filterStatus = 'all';
+let filterLoc = 'all';
+let rotationDecisions = {}; // isbn -> 'keep' | 'hit' | 'ignored'
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return structuredClone(DEFAULT_STATE);
+    let obj = JSON.parse(raw);
+    obj = migrate(obj);
+    return Object.assign(structuredClone(DEFAULT_STATE), obj);
+  } catch (e) {
+    return structuredClone(DEFAULT_STATE);
+  }
+}
+function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+
+/* ===== TABS ===== */
+document.querySelectorAll('nav.tabs button').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+function switchTab(name) {
+  document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === name));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === 'tab-' + name));
+  if (name !== 'scan') stopScanner();
+  if (name === 'library') renderLibrary();
+  if (name === 'kids') renderKids();
+  if (name === 'rotate') renderRotate();
+  if (name === 'recommend') renderRecommend();
+}
+document.getElementById('tab-library').classList.add('active');
+
+/* ===== TOAST ===== */
+let toastTimer;
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+/* ===== MODAL ===== */
+function openModal(html) {
+  document.getElementById('modalContent').innerHTML = html;
+  document.getElementById('modal').classList.add('active');
+}
+function closeModal() { document.getElementById('modal').classList.remove('active'); }
+document.getElementById('modal').addEventListener('click', (e) => {
+  if (e.target.id === 'modal') closeModal();
+});
+
+/* ===== KIDS ===== */
+function renderKids() {
+  const wrap = document.getElementById('kidsList');
+  if (!state.kids.length) {
+    wrap.innerHTML = `<div class="empty"><div class="big-ico">🧒</div><p>No kids added yet.</p></div>`;
+    return;
+  }
+  wrap.innerHTML = state.kids.map(k => `
+    <div class="kid-row">
+      <div class="kid-avatar">${escapeHtml((k.name||'?').slice(0,1).toUpperCase())}</div>
+      <div class="kid-info">
+        <div class="kid-name">${escapeHtml(k.name)} <span class="kid-meta">· age ${escapeHtml(String(k.age||'?'))}</span></div>
+        <div class="kid-meta">${escapeHtml(k.interests || 'No interests noted')}</div>
+      </div>
+      <button class="ghost small" onclick="editKid('${k.id}')">Edit</button>
+    </div>
+  `).join('');
+}
+function editKid(id) {
+  const k = id ? state.kids.find(x => x.id === id) : { id: '', name: '', age: '', interests: '', notes: '' };
+  openModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>${id ? 'Edit kid' : 'Add a kid'}</h2>
+    <label>Name</label>
+    <input type="text" id="kName" value="${escapeAttr(k.name)}" />
+    <label>Age</label>
+    <input type="number" id="kAge" min="0" max="18" value="${escapeAttr(k.age)}" />
+    <label>Interests</label>
+    <input type="text" id="kInterests" value="${escapeAttr(k.interests)}" placeholder="dinosaurs, space, funny stories, dragons" />
+    <label>Other notes</label>
+    <textarea id="kNotes" placeholder="Reads chapter books fluently. Doesn't like scary stuff.">${escapeHtml(k.notes||'')}</textarea>
+    <div class="row" style="margin-top: 14px;">
+      <button class="primary" onclick="saveKid('${k.id}')">Save</button>
+      ${id ? `<button class="danger" onclick="deleteKid('${k.id}')">Delete</button>` : ''}
+    </div>
+  `);
+}
+window.editKid = editKid;
+window.saveKid = function(id) {
+  const name = document.getElementById('kName').value.trim();
+  const age = parseInt(document.getElementById('kAge').value) || null;
+  const interests = document.getElementById('kInterests').value.trim();
+  const notes = document.getElementById('kNotes').value.trim();
+  if (!name) { toast('Please enter a name'); return; }
+  if (id) {
+    const k = state.kids.find(x => x.id === id);
+    Object.assign(k, { name, age, interests, notes });
+  } else {
+    state.kids.push({ id: uid(), name, age, interests, notes });
+  }
+  saveState(); closeModal(); renderKids(); toast('Saved');
+};
+window.deleteKid = function(id) {
+  if (!confirm('Delete this kid and all their reviews?')) return;
+  state.kids = state.kids.filter(k => k.id !== id);
+  state.reviews = state.reviews.filter(r => r.kidId !== id);
+  saveState(); closeModal(); renderKids(); toast('Deleted');
+};
+document.getElementById('btnAddKid').addEventListener('click', () => editKid(''));
+
+/* ===== LIBRARY ===== */
+function renderLibrary() {
+  const kidRow = document.getElementById('kidFilterRow');
+  kidRow.innerHTML = `<button class="pill" data-filter="all" aria-selected="${filterKid==='all'}">All books</button>` +
+    state.kids.map(k => `<button class="pill" data-filter="${k.id}" aria-selected="${filterKid===k.id}">${escapeHtml(k.name)}</button>`).join('');
+  kidRow.querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', () => { filterKid = b.dataset.filter; renderLibrary(); });
+  });
+  document.querySelectorAll('[data-status]').forEach(b => {
+    b.setAttribute('aria-selected', b.dataset.status === filterStatus);
+    b.onclick = () => { filterStatus = b.dataset.status; renderLibrary(); };
+  });
+  document.querySelectorAll('[data-loc]').forEach(b => {
+    b.setAttribute('aria-selected', b.dataset.loc === filterLoc);
+    b.onclick = () => { filterLoc = b.dataset.loc; renderLibrary(); };
+  });
+
+  const grid = document.getElementById('bookGrid');
+  const empty = document.getElementById('libEmpty');
+  let books = state.books.slice().sort((a,b) => (b.addedDate||'').localeCompare(a.addedDate||''));
+
+  if (filterLoc !== 'all') books = books.filter(b => b.location === filterLoc);
+  if (filterStatus !== 'all' && filterKid !== 'all') {
+    books = books.filter(bk => {
+      const hasReview = state.reviews.some(r => r.kidId === filterKid && r.bookIsbn === bk.isbn);
+      return filterStatus === 'read' ? hasReview : !hasReview;
+    });
+  } else if (filterStatus !== 'all') {
+    books = books.filter(bk => {
+      const hasReview = state.reviews.some(r => r.bookIsbn === bk.isbn);
+      return filterStatus === 'read' ? hasReview : !hasReview;
+    });
+  }
+
+  if (!books.length) {
+    grid.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  grid.innerHTML = books.map(bk => {
+    const reviewsForBook = state.reviews.filter(r => r.bookIsbn === bk.isbn);
+    const avg = reviewsForBook.length ? (reviewsForBook.reduce((s, r) => s + (r.rating||0), 0) / reviewsForBook.length).toFixed(1) : null;
+    const coverStyle = bk.cover ? `background-image: url('${escapeAttr(bk.cover)}');` : '';
+    const onShelf = bk.location === 'accessible';
+    const reads = totalReads(bk);
+    return `
+      <div class="book ${onShelf ? '' : 'backstock'}" onclick="openBook('${bk.isbn}')">
+        <span class="corner-badge ${onShelf ? 'shelf' : 'backstock'}">${onShelf ? 'SHELF' : 'STOCK'}</span>
+        <div class="cover" style="${coverStyle}">${bk.cover ? '' : escapeHtml(bk.title)}</div>
+        <div class="meta">
+          <div class="title">${escapeHtml(bk.title)}</div>
+          <div class="author">${escapeHtml((bk.authors||[]).join(', '))}</div>
+          <div class="badges">
+            ${avg ? `<span class="badge">★ ${avg}</span>` : ''}
+            ${reads > 0 ? `<span class="badge reads">📖×${reads}</span>` : ''}
+            ${reviewsForBook.length ? `<span class="badge teal">${reviewsForBook.length} rev</span>` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+window.openBook = function(isbn) {
+  const bk = state.books.find(b => b.isbn === isbn);
+  if (!bk) return;
+  const reviews = state.reviews.filter(r => r.bookIsbn === isbn);
+  const reviewsHtml = reviews.length ? reviews.map(r => {
+    const kid = state.kids.find(k => k.id === r.kidId);
+    return `
+      <div class="review">
+        <div class="head">
+          <div class="who">${escapeHtml(kid ? kid.name : 'Unknown')} <span class="stars-small">${'★'.repeat(r.rating||0)}${'☆'.repeat(5-(r.rating||0))}</span></div>
+          <div class="when">${r.dateRead || ''}</div>
+        </div>
+        ${r.liked ? `<div class="notes"><b>Liked:</b> ${escapeHtml(r.liked)}</div>` : ''}
+        ${r.disliked ? `<div class="notes"><b>Didn't like:</b> ${escapeHtml(r.disliked)}</div>` : ''}
+        ${r.notes ? `<div class="notes">${escapeHtml(r.notes)}</div>` : ''}
+        <button class="ghost small" style="margin-top:6px;" onclick="deleteReview('${r.id}')">Delete review</button>
+      </div>
+    `;
+  }).join('') : '<p class="muted">No reviews yet.</p>';
+
+  const kidsOptions = state.kids.length
+    ? state.kids.map(k => `<button class="pill" onclick="newReview('${isbn}','${k.id}')">+ ${escapeHtml(k.name)}</button>`).join('')
+    : '<p class="muted">Add a kid first (Kids tab) so you can review books.</p>';
+
+  const onShelf = bk.location === 'accessible';
+  const otherLocLabel = onShelf ? 'Move to backstock' : 'Move to shelf';
+
+  openModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <div style="display:flex; gap:14px; align-items:flex-start;">
+      <div class="cover" style="width: 90px; height: 135px; aspect-ratio: auto; flex: 0 0 90px; background-size: cover; ${bk.cover ? `background-image:url('${escapeAttr(bk.cover)}');` : 'background:#ece2d2;'} border-radius: 8px;"></div>
+      <div style="flex:1; min-width:0;">
+        <h2 style="margin:0;">${escapeHtml(bk.title)}</h2>
+        <div class="muted" style="margin-top:2px;">${escapeHtml((bk.authors||[]).join(', '))}${bk.publishYear ? ' · ' + escapeHtml(bk.publishYear) : ''}</div>
+        <div class="pill-row" style="margin-top:6px;">
+          <span class="badge ${onShelf ? 'shelf' : 'backstock'}">${onShelf ? '📚 On shelf' : '📦 Backstock'}</span>
+          <span class="badge reads">📖 ${totalReads(bk)} reads total</span>
+        </div>
+        ${bk.subjects && bk.subjects.length ? `<div class="pill-row" style="margin-top:6px;">${bk.subjects.slice(0,4).map(s => `<span class="badge teal">${escapeHtml(s)}</span>`).join('')}</div>` : ''}
+        <div class="muted" style="margin-top:6px; font-size:11px;">ISBN ${escapeHtml(bk.isbn)}</div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:14px;">
+      <button class="ghost small" onclick="toggleLocation('${isbn}')">${otherLocLabel}</button>
+    </div>
+
+    <h3 style="margin-top:18px;">Times read</h3>
+    ${state.kids.length ? state.kids.map(k => {
+      const n = (bk.readsByKid || {})[k.id] || 0;
+      return `<div class="kid-row">
+        <div class="kid-avatar">${escapeHtml((k.name||'?').slice(0,1).toUpperCase())}</div>
+        <div class="kid-info">
+          <div class="kid-name">${escapeHtml(k.name)}</div>
+          <div class="kid-meta">📖 ${n} read${n===1?'':'s'}</div>
+        </div>
+        ${n > 0 ? `<button class="ghost small" onclick="unbumpRead('${isbn}','${k.id}')">−1</button>` : ''}
+        <button class="secondary small" onclick="bumpRead('${isbn}','${k.id}')">+1 read</button>
+      </div>`;
+    }).join('') : '<p class="muted">Add kids in the Kids tab to log per-kid reads.</p>'}
+
+    <h3 style="margin-top:18px;">Add a review</h3>
+    <div class="pill-row">${kidsOptions}</div>
+    <h3 style="margin-top:18px;">Reviews</h3>
+    ${reviewsHtml}
+    <div style="margin-top:14px;">
+      <button class="danger small" onclick="deleteBook('${isbn}')">Remove book from library</button>
+    </div>
+  `);
+};
+
+window.bumpRead = function(isbn, kidId) {
+  const bk = state.books.find(b => b.isbn === isbn);
+  const kid = state.kids.find(k => k.id === kidId);
+  if (!bk || !kid) return;
+  bk.readsByKid = bk.readsByKid || {};
+  bk.readsByKid[kidId] = (bk.readsByKid[kidId] || 0) + 1;
+  saveState();
+  openBook(isbn);
+  renderLibrary();
+  toast(`📖 ${kid.name}: ${bk.readsByKid[kidId]} reads`);
+};
+window.unbumpRead = function(isbn, kidId) {
+  const bk = state.books.find(b => b.isbn === isbn);
+  if (!bk) return;
+  bk.readsByKid = bk.readsByKid || {};
+  if ((bk.readsByKid[kidId] || 0) > 0) {
+    bk.readsByKid[kidId]--;
+    if (bk.readsByKid[kidId] === 0) delete bk.readsByKid[kidId];
+    saveState();
+    openBook(isbn);
+    renderLibrary();
+  }
+};
+window.toggleLocation = function(isbn) {
+  const bk = state.books.find(b => b.isbn === isbn);
+  if (!bk) return;
+  const newLoc = bk.location === 'accessible' ? 'backstock' : 'accessible';
+  bk.location = newLoc;
+  if (newLoc === 'accessible') bk.placedOnShelfAt = new Date().toISOString();
+  saveState();
+  openBook(isbn);
+  renderLibrary();
+  toast(newLoc === 'accessible' ? '📚 Moved to shelf' : '📦 Moved to backstock');
+};
+window.deleteBook = function(isbn) {
+  if (!confirm('Remove this book and all its reviews?')) return;
+  state.books = state.books.filter(b => b.isbn !== isbn);
+  state.reviews = state.reviews.filter(r => r.bookIsbn !== isbn);
+  saveState(); closeModal(); renderLibrary(); toast('Removed');
+};
+window.deleteReview = function(id) {
+  state.reviews = state.reviews.filter(r => r.id !== id);
+  saveState(); toast('Review deleted'); closeModal();
+};
+window.newReview = function(isbn, kidId) {
+  const bk = state.books.find(b => b.isbn === isbn);
+  const kid = state.kids.find(k => k.id === kidId);
+  const today = new Date().toISOString().slice(0,10);
+  openModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>${escapeHtml(kid.name)}'s review</h2>
+    <div class="muted">${escapeHtml(bk.title)}</div>
+    <label>Rating</label>
+    <div class="stars" id="starPicker">${[1,2,3,4,5].map(i => `<span class="s" data-v="${i}">★</span>`).join('')}</div>
+    <label>What they liked</label>
+    <textarea id="rLiked" placeholder="e.g. silly illustrations, the part where..."></textarea>
+    <label>What they didn't like</label>
+    <textarea id="rDisliked" placeholder="e.g. too scary, too long"></textarea>
+    <label>Other notes</label>
+    <textarea id="rNotes" placeholder="Any context about the read"></textarea>
+    <label>Date read</label>
+    <input type="date" id="rDate" value="${today}" />
+    <div class="row" style="margin-top:14px;">
+      <button class="primary" onclick="saveReview('${isbn}','${kidId}')">Save review</button>
+    </div>
+  `);
+  let rating = 0;
+  document.querySelectorAll('#starPicker .s').forEach(s => {
+    s.addEventListener('click', () => {
+      rating = parseInt(s.dataset.v);
+      document.querySelectorAll('#starPicker .s').forEach(x => x.classList.toggle('on', parseInt(x.dataset.v) <= rating));
+    });
+  });
+  window._pendingRating = () => rating;
+};
+window.saveReview = function(isbn, kidId) {
+  const rating = window._pendingRating ? window._pendingRating() : 0;
+  if (!rating) { toast('Pick a rating first'); return; }
+  state.reviews.push({
+    id: uid(),
+    kidId, bookIsbn: isbn, rating,
+    liked: document.getElementById('rLiked').value.trim(),
+    disliked: document.getElementById('rDisliked').value.trim(),
+    notes: document.getElementById('rNotes').value.trim(),
+    dateRead: document.getElementById('rDate').value
+  });
+  saveState(); closeModal(); renderLibrary(); toast('Review saved');
+};
+
+/* ===== SCANNING ===== */
+let videoStream = null;
+let detector = null;
+let scanLoop = null;
+let zxingReader = null;
+
+async function startScanner() {
+  document.getElementById('scanFallback').innerHTML = '';
+  if ('BarcodeDetector' in window) {
+    try {
+      detector = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a'] });
+      videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } });
+      const video = document.getElementById('video');
+      video.srcObject = videoStream;
+      document.getElementById('scanWrap').classList.add('active');
+      document.getElementById('btnStartScan').style.display = 'none';
+      document.getElementById('btnStopScan').style.display = 'inline-flex';
+      scanLoop = setInterval(async () => {
+        try {
+          const codes = await detector.detect(video);
+          if (codes.length) { const isbn = codes[0].rawValue; stopScanner(); lookupAndAdd(isbn); }
+        } catch (e) {}
+      }, 350);
+      return;
+    } catch (e) {
+      document.getElementById('scanFallback').innerHTML =
+        "Couldn't access the camera (" + escapeHtml(e.message || 'permission denied') + "). Use manual entry below.";
+      return;
+    }
+  }
+  if (window.ZXingBrowser) {
+    try {
+      zxingReader = new window.ZXingBrowser.BrowserMultiFormatReader();
+      document.getElementById('scanWrap').classList.add('active');
+      document.getElementById('btnStartScan').style.display = 'none';
+      document.getElementById('btnStopScan').style.display = 'inline-flex';
+      const controls = await zxingReader.decodeFromVideoDevice(undefined, 'video', (result, err) => {
+        if (result) { const isbn = result.getText(); stopScanner(); lookupAndAdd(isbn); }
+      });
+      zxingReader._controls = controls;
+      return;
+    } catch (e) {
+      document.getElementById('scanFallback').innerHTML =
+        "Couldn't start scanner (" + escapeHtml(e.message || 'error') + "). Use manual entry below.";
+      return;
+    }
+  }
+  document.getElementById('scanFallback').innerHTML =
+    "Your browser can't scan barcodes. Type the ISBN by hand below — it's the 13-digit number above the barcode.";
+}
+function stopScanner() {
+  if (scanLoop) { clearInterval(scanLoop); scanLoop = null; }
+  if (videoStream) { videoStream.getTracks().forEach(t => t.stop()); videoStream = null; }
+  if (zxingReader) {
+    try { zxingReader._controls && zxingReader._controls.stop(); } catch (e) {}
+    try { zxingReader.reset && zxingReader.reset(); } catch (e) {}
+    zxingReader = null;
+  }
+  document.getElementById('scanWrap').classList.remove('active');
+  document.getElementById('btnStartScan').style.display = 'inline-flex';
+  document.getElementById('btnStopScan').style.display = 'none';
+}
+document.getElementById('btnStartScan').addEventListener('click', startScanner);
+document.getElementById('btnStopScan').addEventListener('click', stopScanner);
+document.getElementById('btnLookup').addEventListener('click', () => {
+  const isbn = document.getElementById('manualIsbn').value.replace(/[^\dXx]/g,'');
+  if (!isbn) { toast('Enter an ISBN'); return; }
+  lookupAndAdd(isbn);
+});
+
+async function lookupAndAdd(isbn) {
+  isbn = isbn.replace(/[^\dXx]/g,'');
+  if (state.books.some(b => b.isbn === isbn)) {
+    toast('Already in your library — opening it');
+    openBook(isbn);
+    return;
+  }
+  document.getElementById('lookupResult').innerHTML = `<div class="card"><p class="muted">Looking up ISBN ${escapeHtml(isbn)}…</p></div>`;
+  const book = await fetchBook(isbn);
+  if (!book) {
+    document.getElementById('lookupResult').innerHTML = `
+      <div class="card">
+        <h3>Couldn't find it automatically</h3>
+        <p class="muted">No record for ISBN ${escapeHtml(isbn)}. Add it manually:</p>
+        <label>Title</label><input type="text" id="mTitle" />
+        <label>Author</label><input type="text" id="mAuthor" />
+        <label>Where does this go?</label>
+        <select id="mLocation">
+          <option value="backstock" ${state.settings.lastScanLocation==='backstock'?'selected':''}>📦 Backstock</option>
+          <option value="accessible" ${state.settings.lastScanLocation==='accessible'?'selected':''}>📚 On accessible shelf</option>
+        </select>
+        <button class="primary" style="margin-top:10px;" onclick="addManualBook('${isbn}')">Add to library</button>
+      </div>`;
+    return;
+  }
+  const lastLoc = state.settings.lastScanLocation || 'backstock';
+  document.getElementById('lookupResult').innerHTML = `
+    <div class="card">
+      <h3>Add this book?</h3>
+      <div style="display:flex; gap:14px;">
+        <div class="cover" style="width:90px; height:135px; aspect-ratio:auto; flex:0 0 90px; ${book.cover ? `background:url('${escapeAttr(book.cover)}') center/cover;` : 'background:#ece2d2;'} border-radius:8px;"></div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:600;">${escapeHtml(book.title)}</div>
+          <div class="muted">${escapeHtml((book.authors||[]).join(', '))}</div>
+          ${book.publishYear ? `<div class="muted" style="font-size:12px;">${escapeHtml(book.publishYear)}</div>` : ''}
+          ${book.subjects && book.subjects.length ? `<div class="pill-row" style="margin-top:6px;">${book.subjects.slice(0,3).map(s => `<span class="badge teal">${escapeHtml(s)}</span>`).join('')}</div>` : ''}
+        </div>
+      </div>
+      <label style="margin-top:10px;">Where does this go?</label>
+      <select id="addLocation">
+        <option value="backstock" ${lastLoc==='backstock'?'selected':''}>📦 Backstock</option>
+        <option value="accessible" ${lastLoc==='accessible'?'selected':''}>📚 On accessible shelf</option>
+      </select>
+      <div class="row" style="margin-top:10px;">
+        <button class="primary" id="btnConfirmAdd">Add to library</button>
+        <button class="ghost" id="btnCancelAdd">Cancel</button>
+      </div>
+    </div>`;
+  document.getElementById('btnConfirmAdd').onclick = () => {
+    const loc = document.getElementById('addLocation').value;
+    book.addedDate = new Date().toISOString();
+    book.location = loc;
+    book.placedOnShelfAt = loc === 'accessible' ? book.addedDate : null;
+    book.readCount = 0;
+    state.books.push(book);
+    state.settings.lastScanLocation = loc;
+    saveState();
+    document.getElementById('lookupResult').innerHTML = '';
+    renderRecentScans();
+    toast(`Added to ${loc === 'accessible' ? 'shelf' : 'backstock'}: ${book.title}`);
+    document.getElementById('manualIsbn').value = '';
+  };
+  document.getElementById('btnCancelAdd').onclick = () => {
+    document.getElementById('lookupResult').innerHTML = '';
+  };
+}
+
+window.addManualBook = function(isbn) {
+  const title = document.getElementById('mTitle').value.trim();
+  const author = document.getElementById('mAuthor').value.trim();
+  const loc = document.getElementById('mLocation').value;
+  if (!title) { toast('Title required'); return; }
+  state.books.push({
+    isbn, title, authors: author ? [author] : [], cover: null, subjects: [], publishYear: null,
+    addedDate: new Date().toISOString(),
+    location: loc,
+    placedOnShelfAt: loc === 'accessible' ? new Date().toISOString() : null,
+    readCount: 0
+  });
+  state.settings.lastScanLocation = loc;
+  saveState();
+  document.getElementById('lookupResult').innerHTML = '';
+  renderRecentScans();
+  toast(`Added to ${loc === 'accessible' ? 'shelf' : 'backstock'}: ${title}`);
+};
+
+async function fetchBook(isbn) {
+  try {
+    const r = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${encodeURIComponent(isbn)}&format=json&jscmd=data`);
+    const j = await r.json();
+    const key = 'ISBN:' + isbn;
+    if (j[key]) {
+      const d = j[key];
+      return {
+        isbn,
+        title: d.title,
+        authors: (d.authors || []).map(a => a.name),
+        cover: (d.cover && (d.cover.medium || d.cover.large || d.cover.small)) || `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`,
+        subjects: (d.subjects || []).slice(0, 8).map(s => s.name),
+        publishYear: d.publish_date ? String(d.publish_date).match(/\d{4}/)?.[0] : null
+      };
+    }
+  } catch (e) {}
+  try {
+    const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(isbn)}`);
+    const j = await r.json();
+    if (j.items && j.items.length) {
+      const v = j.items[0].volumeInfo;
+      return {
+        isbn,
+        title: v.title,
+        authors: v.authors || [],
+        cover: v.imageLinks ? (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail) : null,
+        subjects: v.categories || [],
+        publishYear: v.publishedDate ? String(v.publishedDate).slice(0,4) : null
+      };
+    }
+  } catch (e) {}
+  return null;
+}
+
+function renderRecentScans() {
+  const recent = state.books.slice().sort((a,b)=>(b.addedDate||'').localeCompare(a.addedDate||'')).slice(0,5);
+  if (!recent.length) { document.getElementById('recentScansCard').style.display = 'none'; return; }
+  document.getElementById('recentScansCard').style.display = 'block';
+  document.getElementById('recentScans').innerHTML = recent.map(b => `
+    <div class="kid-row" onclick="openBook('${b.isbn}')" style="cursor:pointer;">
+      <div class="cover" style="width:36px; height:54px; aspect-ratio:auto; flex:0 0 36px; ${b.cover ? `background:url('${escapeAttr(b.cover)}') center/cover;` : 'background:#ece2d2;'} border-radius:4px;"></div>
+      <div class="kid-info">
+        <div class="kid-name" style="font-size:14px;">${escapeHtml(b.title)} <span class="badge ${b.location==='accessible'?'shelf':'backstock'}" style="margin-left:4px;">${b.location==='accessible'?'shelf':'stock'}</span></div>
+        <div class="kid-meta">${escapeHtml((b.authors||[]).join(', '))}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+/* ===== ROTATE TAB ===== */
+function renderRotate() {
+  rotationDecisions = rotationDecisions || {};
+  const wrap = document.getElementById('rotateList');
+  const empty = document.getElementById('rotateEmpty');
+  const actions = document.getElementById('rotateActions');
+  const out = document.getElementById('rotatePromptOut');
+  out.innerHTML = '';
+
+  const accessible = state.books.filter(b => b.location === 'accessible')
+    .sort((a,b) => (a.placedOnShelfAt||'').localeCompare(b.placedOnShelfAt||''));
+  if (!accessible.length) {
+    wrap.innerHTML = '';
+    empty.style.display = 'block';
+    actions.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  actions.style.display = 'flex';
+
+  wrap.innerHTML = accessible.map(bk => {
+    const reviewsForBook = state.reviews.filter(r => r.bookIsbn === bk.isbn);
+    const avg = reviewsForBook.length ? (reviewsForBook.reduce((s, r) => s + (r.rating||0), 0) / reviewsForBook.length).toFixed(1) : null;
+    const dec = rotationDecisions[bk.isbn] || 'keep';
+    return `
+      <div class="rotate-item">
+        <div class="mini-cover" style="${bk.cover ? `background-image:url('${escapeAttr(bk.cover)}');` : ''}"></div>
+        <div class="info">
+          <div class="t">${escapeHtml(bk.title)}</div>
+          <div class="a">${escapeHtml((bk.authors||[]).join(', '))}</div>
+          <div class="pill-row" style="margin-top:4px;">
+            ${state.kids.map(k => {
+              const n = (bk.readsByKid||{})[k.id] || 0;
+              return `<span class="badge reads">${escapeHtml(k.name)} ${n}</span>`;
+            }).join('')}
+            ${avg ? `<span class="badge">★ ${avg}</span>` : ''}
+            ${bk.placedOnShelfAt ? `<span class="badge teal">since ${bk.placedOnShelfAt.slice(0,10)}</span>` : ''}
+          </div>
+          <div class="decision-row">
+            <button class="${dec==='keep'?'sel-keep':''}" onclick="setRotateDecision('${bk.isbn}','keep')">Keep</button>
+            <button class="${dec==='hit'?'sel-hit':''}" onclick="setRotateDecision('${bk.isbn}','hit')">Rotate (hit)</button>
+            <button class="${dec==='ignored'?'sel-ignored':''}" onclick="setRotateDecision('${bk.isbn}','ignored')">Rotate (ignored)</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+window.setRotateDecision = function(isbn, dec) {
+  rotationDecisions[isbn] = dec;
+  renderRotate();
+};
+
+document.getElementById('btnRotateApply').addEventListener('click', () => {
+  const out = Object.entries(rotationDecisions).filter(([_, d]) => d === 'hit' || d === 'ignored');
+  if (!out.length) { toast('No books flagged to rotate out'); return; }
+  if (!confirm(`Move ${out.length} book${out.length>1?'s':''} to backstock?`)) return;
+  const now = new Date().toISOString();
+  out.forEach(([isbn, dec]) => {
+    const bk = state.books.find(b => b.isbn === isbn);
+    if (!bk) return;
+    bk.lastShelfStint = {
+      placedAt: bk.placedOnShelfAt,
+      removedAt: now,
+      outcome: dec,
+      readsAtRemoval: { ...(bk.readsByKid || {}) }
+    };
+    bk.location = 'backstock';
+    bk.placedOnShelfAt = null;
+  });
+  rotationDecisions = {};
+  saveState();
+  renderRotate();
+  toast(`Moved ${out.length} to backstock`);
+});
+
+document.getElementById('btnRotateBuildPrompt').addEventListener('click', () => {
+  const accessibleNow = state.books.filter(b => b.location === 'accessible');
+  if (!accessibleNow.length && !Object.keys(rotationDecisions).length) {
+    toast('Mark some books first, or move some to the shelf');
+    return;
+  }
+  const text = buildRotationPrompt();
+  document.getElementById('rotatePromptOut').innerHTML = `
+    <div class="card" style="margin-top:10px;">
+      <h3>Rotation prompt</h3>
+      <p class="muted">Paste this into the Claude chat. I'll use it to suggest which backstock books to bring forward.</p>
+      <pre class="export">${escapeHtml(text)}</pre>
+      <div class="row" style="margin-top:8px;">
+        <button class="primary" id="btnCopyRot">📋 Copy to clipboard</button>
+      </div>
+    </div>`;
+  document.getElementById('btnCopyRot').onclick = async () => {
+    try { await navigator.clipboard.writeText(text); toast('Copied — paste into chat'); }
+    catch (e) { toast('Select the text and copy manually'); }
+  };
+});
+
+function fmtReads(reads) {
+  if (!reads) return 'no recorded reads';
+  const parts = Object.entries(reads)
+    .filter(([_, n]) => n > 0)
+    .map(([kid, n]) => {
+      const k = state.kids.find(x => x.id === kid);
+      return `${k ? k.name : 'unknown'} ${n}`;
+    });
+  return parts.length ? parts.join(', ') : 'no recorded reads';
+}
+
+function buildRotationPrompt() {
+  const lines = [];
+  lines.push("ROTATION PLANNING — Please suggest 6-10 books from our BACKSTOCK to bring onto the accessible shelf.");
+  lines.push("Optimize for: matching our kids' interests, mixing subject variety, leaning toward books connected to previously-loved titles (same author / series / themes), and avoiding anything just rotated out as ignored. Per-kid read counts indicate WHO engaged with each book — use that to balance the next shelf for each kid.");
+  lines.push("Use web search if helpful to assess fit. Output a ranked list with a 1-2 sentence reason per book and which kid it's mainly aimed at.");
+  lines.push("");
+
+  // Kids
+  if (state.kids.length) {
+    lines.push("OUR READERS:");
+    state.kids.forEach(k => {
+      lines.push(`  • ${k.name} (age ${k.age || '?'})${k.interests ? ' — interests: ' + k.interests : ''}${k.notes ? ' — notes: ' + k.notes : ''}`);
+      const reviews = state.reviews.filter(r => r.kidId === k.id);
+      const loved = reviews.filter(r => (r.rating||0) >= 4);
+      const meh = reviews.filter(r => (r.rating||0) <= 2);
+      if (loved.length) {
+        lines.push("    Loved:");
+        loved.forEach(r => {
+          const bk = state.books.find(b => b.isbn === r.bookIsbn);
+          if (bk) lines.push(`      - ${bk.title} — ${(bk.authors||[]).join(', ')} (${r.rating}★)${r.liked ? ' — ' + r.liked : ''}`);
+        });
+      }
+      if (meh.length) {
+        lines.push("    Did not enjoy:");
+        meh.forEach(r => {
+          const bk = state.books.find(b => b.isbn === r.bookIsbn);
+          if (bk) lines.push(`      - ${bk.title} — ${(bk.authors||[]).join(', ')} (${r.rating}★)${r.disliked ? ' — ' + r.disliked : ''}`);
+        });
+      }
+    });
+    lines.push("");
+  }
+
+  // Just rotated out / decisions
+  const decided = Object.entries(rotationDecisions);
+  const hits = decided.filter(([_, d]) => d === 'hit');
+  const ignored = decided.filter(([_, d]) => d === 'ignored');
+  const keepers = decided.filter(([_, d]) => d === 'keep');
+
+  if (hits.length) {
+    lines.push("JUST ROTATED OUT — HITS (kids engaged with these; we're retiring before they get stale):");
+    hits.forEach(([isbn]) => {
+      const bk = state.books.find(b => b.isbn === isbn);
+      if (bk) lines.push(`  • ${bk.title} — ${(bk.authors||[]).join(', ')} — reads: ${fmtReads(bk.readsByKid)}${bk.subjects && bk.subjects.length ? ' — subjects: ' + bk.subjects.slice(0,3).join(', ') : ''}`);
+    });
+    lines.push("");
+  }
+  if (ignored.length) {
+    lines.push("JUST ROTATED OUT — IGNORED (kids didn't engage; do NOT recommend similar):");
+    ignored.forEach(([isbn]) => {
+      const bk = state.books.find(b => b.isbn === isbn);
+      if (bk) lines.push(`  • ${bk.title} — ${(bk.authors||[]).join(', ')} — reads: ${fmtReads(bk.readsByKid)}${bk.subjects && bk.subjects.length ? ' — subjects: ' + bk.subjects.slice(0,3).join(', ') : ''}`);
+    });
+    lines.push("");
+  }
+  if (keepers.length) {
+    lines.push("STAYING ON THE SHELF:");
+    keepers.forEach(([isbn]) => {
+      const bk = state.books.find(b => b.isbn === isbn);
+      if (bk) lines.push(`  • ${bk.title} — ${(bk.authors||[]).join(', ')} — reads: ${fmtReads(bk.readsByKid)}`);
+    });
+    lines.push("");
+  }
+
+  // Past rotation history (from book.lastShelfStint)
+  const historic = state.books.filter(b => b.lastShelfStint && b.location === 'backstock');
+  if (historic.length) {
+    lines.push("PRIOR ROTATION HISTORY (in backstock, with last shelf outcome):");
+    historic.slice(0, 30).forEach(b => {
+      lines.push(`  • ${b.title} — ${(b.authors||[]).join(', ')} — last outcome: ${b.lastShelfStint.outcome} — reads at removal: ${fmtReads(b.lastShelfStint.readsAtRemoval)}`);
+    });
+    lines.push("");
+  }
+
+  // Backstock candidates
+  const backstock = state.books.filter(b => b.location === 'backstock');
+  if (backstock.length) {
+    lines.push(`BACKSTOCK (${backstock.length} books — candidates to bring forward):`);
+    backstock.forEach(b => {
+      const subj = b.subjects && b.subjects.length ? b.subjects.slice(0,3).join(', ') : '';
+      lines.push(`  • ${b.title} — ${(b.authors||[]).join(', ')}${subj ? ' — ' + subj : ''}`);
+    });
+    lines.push("");
+  } else {
+    lines.push("(No books in backstock yet — add some via the Scan tab and set their location to Backstock.)");
+  }
+
+  return lines.join('\n');
+}
+
+/* ===== RECOMMEND ===== */
+function renderRecommend() {
+  const picker = document.getElementById('recommendKidPicker');
+  if (!state.kids.length) {
+    picker.innerHTML = '';
+    document.getElementById('recommendOutput').innerHTML = '<p class="muted">Add a kid in the Kids tab first.</p>';
+    return;
+  }
+  picker.innerHTML = state.kids.map(k =>
+    `<button class="pill" onclick="buildPromptForKid('${k.id}')">For ${escapeHtml(k.name)}</button>`
+  ).join('') + `<button class="pill" onclick="buildPromptForAll()">For everyone</button>`;
+  document.getElementById('recommendOutput').innerHTML = '<p class="muted">Pick a kid to build a recommendation prompt.</p>';
+}
+
+function buildPrompt(kidIds) {
+  const lines = [];
+  lines.push("Please recommend kids' books to ADD to our library (we don't own these yet) for the following reader(s) based on my notes below.");
+  lines.push("Use web search to find current titles, award winners, and reasonable next-reads. Avoid books already in our library. Suggest 8-12 books, grouped by reader if more than one, with a 1-2 sentence reason for each.");
+  lines.push("");
+  for (const kidId of kidIds) {
+    const kid = state.kids.find(k => k.id === kidId);
+    if (!kid) continue;
+    lines.push(`READER: ${kid.name} (age ${kid.age || '?'})`);
+    if (kid.interests) lines.push(`Interests: ${kid.interests}`);
+    if (kid.notes) lines.push(`Notes: ${kid.notes}`);
+    const reviews = state.reviews.filter(r => r.kidId === kidId);
+    const reviewed = reviews.map(r => {
+      const bk = state.books.find(b => b.isbn === r.bookIsbn);
+      return { bk, r };
+    }).filter(x => x.bk);
+    const loved = reviewed.filter(x => (x.r.rating||0) >= 4);
+    const meh = reviewed.filter(x => (x.r.rating||0) <= 2);
+    const middle = reviewed.filter(x => (x.r.rating||0) === 3);
+    const readsFor = (bk) => (bk.readsByKid || {})[kidId] || 0;
+    if (loved.length) {
+      lines.push("Loved:");
+      loved.forEach(x => { const n = readsFor(x.bk); lines.push(`  • ${x.bk.title} — ${(x.bk.authors||[]).join(', ')} (${x.r.rating}★${n ? `, read ${n}×` : ''})${x.r.liked ? ' — liked: ' + x.r.liked : ''}`); });
+    }
+    if (middle.length) {
+      lines.push("Okay/mixed:");
+      middle.forEach(x => { const n = readsFor(x.bk); lines.push(`  • ${x.bk.title} — ${(x.bk.authors||[]).join(', ')} (${x.r.rating}★${n ? `, read ${n}×` : ''})${x.r.notes ? ' — ' + x.r.notes : ''}`); });
+    }
+    if (meh.length) {
+      lines.push("Did not enjoy:");
+      meh.forEach(x => { const n = readsFor(x.bk); lines.push(`  • ${x.bk.title} — ${(x.bk.authors||[]).join(', ')} (${x.r.rating}★${n ? `, read ${n}×` : ''})${x.r.disliked ? ' — disliked: ' + x.r.disliked : ''}`); });
+    }
+    lines.push("");
+  }
+  if (state.books.length) {
+    lines.push("OUR FULL LIBRARY (already own — do NOT re-recommend these):");
+    state.books.forEach(b => { lines.push(`  • ${b.title} — ${(b.authors||[]).join(', ')}`); });
+  }
+  return lines.join('\n');
+}
+
+window.buildPromptForKid = function(kidId) { showPrompt(buildPrompt([kidId])); };
+window.buildPromptForAll = function() { showPrompt(buildPrompt(state.kids.map(k => k.id))); };
+
+function showPrompt(text) {
+  document.getElementById('recommendOutput').innerHTML = `
+    <p class="muted">Copy the text below and paste it into the Claude chat. I'll do the recommendations from there.</p>
+    <pre class="export" id="promptOut">${escapeHtml(text)}</pre>
+    <div class="row" style="margin-top:8px;">
+      <button class="primary" id="btnCopyPrompt">📋 Copy to clipboard</button>
+    </div>
+  `;
+  document.getElementById('btnCopyPrompt').onclick = async () => {
+    try { await navigator.clipboard.writeText(text); toast('Copied — paste into chat'); }
+    catch (e) { toast('Select the text and copy manually'); }
+  };
+}
+
+/* ===== EXPORT / IMPORT / CLEAR ===== */
+document.getElementById('btnExport').addEventListener('click', () => {
+  const json = JSON.stringify(state, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,10);
+  a.href = url; a.download = `kids-library-${stamp}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast('Exported');
+});
+document.getElementById('btnImport').addEventListener('click', () => {
+  document.getElementById('importFile').click();
+});
+document.getElementById('importFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    let data = JSON.parse(text);
+    data = migrate(data);
+    if (!data.kids || !data.books) throw new Error('Not a library file');
+    if (confirm('Replace your current library with the imported file? (Cancel to merge instead)')) {
+      state = Object.assign(structuredClone(DEFAULT_STATE), data);
+    } else {
+      data.kids.forEach(k => { if (!state.kids.some(x => x.id === k.id)) state.kids.push(k); });
+      data.books.forEach(b => { if (!state.books.some(x => x.isbn === b.isbn)) state.books.push(b); });
+      data.reviews.forEach(r => { if (!state.reviews.some(x => x.id === r.id)) state.reviews.push(r); });
+    }
+    saveState();
+    renderKids(); renderLibrary();
+    toast('Imported');
+  } catch (err) {
+    toast('Import failed: ' + err.message);
+  }
+  e.target.value = '';
+});
+document.getElementById('btnClear').addEventListener('click', () => {
+  if (!confirm('This will permanently delete all your kids, books, and reviews. Continue?')) return;
+  state = structuredClone(DEFAULT_STATE);
+  saveState();
+  renderKids(); renderLibrary();
+  toast('Cleared');
+});
+
+/* ===== UTIL ===== */
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s) { return escapeHtml(s).replace(/`/g,'&#96;'); }
+
+renderLibrary();
+renderRecentScans();
+</script>
+</body>
+</html>
