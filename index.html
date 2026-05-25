@@ -19,6 +19,8 @@
     --teal-soft: #d6e8ec;
     --good: #4f7a3a;
     --bad: #b53a3a;
+    --library: #6b4ba8;
+    --library-soft: #e6dff5;
     --border: #e7ddd0;
     --shadow: 0 1px 2px rgba(40,30,20,0.06), 0 4px 12px rgba(40,30,20,0.04);
     --radius: 14px;
@@ -37,14 +39,14 @@
     background: rgba(247,241,230,0.97);
     backdrop-filter: saturate(160%) blur(8px);
     border-top: 1px solid var(--border);
-    display: grid; grid-template-columns: repeat(5, 1fr);
-    padding: 6px 4px calc(6px + env(safe-area-inset-bottom)) 4px;
+    display: grid; grid-template-columns: repeat(6, 1fr);
+    padding: 6px 2px calc(6px + env(safe-area-inset-bottom)) 2px;
     z-index: 50;
   }
   nav.tabs button {
     background: transparent; border: 0; color: var(--muted);
-    padding: 8px 2px; font-size: 11px; font-weight: 500; cursor: pointer;
-    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 8px 2px; font-size: 10px; font-weight: 500; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
     border-radius: 10px;
   }
   nav.tabs button .ico { font-size: 20px; line-height: 1; }
@@ -96,6 +98,7 @@
   .badge.shelf { background: #e1f0d5; color: #4f7a3a; }
   .badge.backstock { background: #ece2d2; color: #7a6f63; }
   .badge.reads { background: #fff3df; color: #a36b1c; }
+  .badge.library { background: var(--library-soft); color: var(--library); }
   .corner-badge {
     position: absolute; top: 4px; right: 4px; z-index: 2;
     background: rgba(255,255,255,0.92); border-radius: 6px;
@@ -103,6 +106,7 @@
   }
   .corner-badge.shelf { color: #4f7a3a; }
   .corner-badge.backstock { color: #7a6f63; }
+  .corner-badge.library { color: var(--library); }
   .kid-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px dashed var(--border); }
   .kid-row:first-child { border-top: 0; }
   .kid-avatar { width: 38px; height: 38px; border-radius: 999px; background: var(--teal-soft); color: var(--teal); display: flex; align-items: center; justify-content: center; font-weight: 700; flex: 0 0 38px; }
@@ -162,7 +166,6 @@
     padding: 10px; font-size: 12px; white-space: pre-wrap; word-break: break-word;
     max-height: 240px; overflow-y: auto;
   }
-  /* rotate tab */
   .rotate-item {
     display: flex; gap: 10px; padding: 10px 0; border-top: 1px dashed var(--border);
     align-items: flex-start;
@@ -184,6 +187,9 @@
   .decision-row button.sel-keep { background: var(--teal); color: white; border-color: var(--teal); }
   .decision-row button.sel-hit { background: var(--good); color: white; border-color: var(--good); }
   .decision-row button.sel-ignored { background: var(--bad); color: white; border-color: var(--bad); }
+  .manual-section { padding: 10px 0; display: none; }
+  .manual-section.active { display: block; }
+  .photo-preview { width: 120px; height: 180px; background: #ece2d2 center/cover no-repeat; border-radius: 8px; margin: 8px 0; }
 </style>
 </head>
 <body>
@@ -205,6 +211,7 @@
         <button class="pill" data-loc="all" aria-selected="true">All locations</button>
         <button class="pill" data-loc="accessible">On shelf</button>
         <button class="pill" data-loc="backstock">Backstock</button>
+        <button class="pill" data-loc="library">Library books</button>
       </div>
       <div class="pill-row">
         <button class="pill" data-status="all" aria-selected="true">Any read status</button>
@@ -215,15 +222,15 @@
     <div id="bookGrid" class="book-grid"></div>
     <div id="libEmpty" class="empty" style="display:none;">
       <div class="big-ico">📚</div>
-      <p>No books match. Tap <b>Scan</b> at the bottom to add one.</p>
+      <p>No books match. Tap <b>Add</b> at the bottom to add one.</p>
     </div>
   </section>
 
-  <!-- SCAN TAB -->
-  <section class="tab" id="tab-scan">
+  <!-- ADD TAB (was Scan) -->
+  <section class="tab" id="tab-add">
     <div class="card">
-      <h2>Add a book</h2>
-      <p class="muted">Point the camera at the barcode (the one starting with 978…). On phones, the camera will ask permission the first time.</p>
+      <h2>Scan a barcode</h2>
+      <p class="muted">Point the camera at the barcode (the one starting with 978…). The first scan asks for camera permission.</p>
       <div id="scanWrap">
         <video id="video" autoplay playsinline muted></video>
         <div class="reticle"></div>
@@ -236,15 +243,47 @@
       <div id="scanFallback" class="muted" style="margin-top: 8px;"></div>
     </div>
 
+    <!-- Lookup result lives HERE, above the manual options -->
+    <div id="lookupResult"></div>
+
     <div class="card">
-      <h3>Or enter ISBN manually</h3>
-      <div class="row">
-        <input type="text" inputmode="numeric" id="manualIsbn" placeholder="9780399226908" />
-        <button class="secondary" id="btnLookup">Look up</button>
+      <h2>Or add by hand</h2>
+      <p class="muted">Choose how you want to enter this book.</p>
+      <div class="pill-row" id="manualModePicker">
+        <button class="pill" data-mode="isbn" aria-selected="true">By ISBN</button>
+        <button class="pill" data-mode="photo">By cover photo</button>
+        <button class="pill" data-mode="text">By title & author</button>
+      </div>
+
+      <div id="manual-isbn" class="manual-section active">
+        <label>ISBN-13 (13 digits, starts with 978 or 979)</label>
+        <div class="row">
+          <input type="text" inputmode="numeric" id="manualIsbn" placeholder="9780399226908" />
+          <button class="secondary" id="btnLookup">Look up</button>
+        </div>
+      </div>
+
+      <div id="manual-photo" class="manual-section">
+        <p class="muted">For books without barcodes (board books, older editions). Snap the cover — we'll save it as the book's image — then type the title and author.</p>
+        <label>Cover photo</label>
+        <input type="file" id="coverPhotoInput" accept="image/*" capture="environment" />
+        <div id="coverPhotoPreview" class="photo-preview" style="display:none;"></div>
+        <label>Title</label>
+        <input type="text" id="photoTitle" placeholder="Goodnight Moon" />
+        <label>Author</label>
+        <input type="text" id="photoAuthor" placeholder="Margaret Wise Brown" />
+        <button class="primary" id="btnSavePhotoBook" style="margin-top:10px;">Add to library</button>
+      </div>
+
+      <div id="manual-text" class="manual-section">
+        <p class="muted">For when you don't have the book in hand or there's no cover to photograph.</p>
+        <label>Title</label>
+        <input type="text" id="textTitle" placeholder="The Snowy Day" />
+        <label>Author</label>
+        <input type="text" id="textAuthor" placeholder="Ezra Jack Keats" />
+        <button class="primary" id="btnSaveTextBook" style="margin-top:10px;">Add to library</button>
       </div>
     </div>
-
-    <div id="lookupResult"></div>
 
     <div class="card" id="recentScansCard" style="display:none;">
       <h3>Recently added</h3>
@@ -266,7 +305,7 @@
   <section class="tab" id="tab-rotate">
     <div class="card">
       <h2>Plan a rotation</h2>
-      <p class="muted">Books currently on your accessible shelves. For each one, decide: <b>Keep</b> it on the shelf, mark it as a <b>Hit</b> (kids loved it, time to retire it before they get sick of it), or mark it <b>Ignored</b> (rotate it out — they didn't bite). Then I'll suggest backstock books to bring forward.</p>
+      <p class="muted">Owned books currently on your accessible shelves. Library books are excluded (they go back to the library, not to backstock). For each: <b>Keep</b>, <b>Hit</b> (loved, retire before stale), or <b>Ignored</b> (didn't bite). Then I'll suggest backstock books to bring forward.</p>
       <div id="rotateList"></div>
       <div id="rotateEmpty" class="empty" style="display:none;">
         <div class="big-ico">🪑</div>
@@ -288,26 +327,38 @@
       <div id="recommendKidPicker" class="pill-row"></div>
       <div id="recommendOutput" style="margin-top: 12px;"></div>
     </div>
+  </section>
 
+  <!-- SETTINGS TAB -->
+  <section class="tab" id="tab-settings">
     <div class="card">
-      <h3>Backup &amp; sync</h3>
-      <p class="muted">Move your library between devices: export the JSON on one, import it on another.</p>
+      <h2>Backup &amp; sync</h2>
+      <p class="muted">Move data between devices, or back up before clearing. Merging adds new books and <b>sums read counts</b> for books that exist on both devices.</p>
       <div class="row" style="margin-top: 8px;">
         <button class="ghost small" id="btnExport">⬇️ Export JSON</button>
         <button class="ghost small" id="btnImport">⬆️ Import JSON</button>
-        <button class="danger small" id="btnClear">Clear all data</button>
       </div>
       <input type="file" id="importFile" accept="application/json" style="display:none;" />
+    </div>
+    <div class="card">
+      <h2>Danger zone</h2>
+      <p class="muted">Permanently delete everything — kids, books, reviews. Cannot be undone.</p>
+      <button class="danger small" id="btnClear">Clear all data</button>
+    </div>
+    <div class="card">
+      <h2>About</h2>
+      <p class="muted">Data lives in your browser's localStorage on this device. Use Export to move it to another device. Last scan choice is remembered as the sticky default for the next book you add.</p>
     </div>
   </section>
 </main>
 
 <nav class="tabs" role="tablist">
   <button data-tab="library" aria-selected="true"><span class="ico">📚</span>Library</button>
-  <button data-tab="scan"><span class="ico">📷</span>Scan</button>
+  <button data-tab="add"><span class="ico">➕</span>Add</button>
   <button data-tab="kids"><span class="ico">🧒</span>Kids</button>
   <button data-tab="rotate"><span class="ico">🔄</span>Rotate</button>
-  <button data-tab="recommend"><span class="ico">✨</span>Recommend</button>
+  <button data-tab="recommend"><span class="ico">✨</span>Recs</button>
+  <button data-tab="settings"><span class="ico">⚙️</span>Settings</button>
 </nav>
 
 <div class="modal-backdrop" id="modal">
@@ -320,17 +371,17 @@
 /* ===== STATE ===== */
 const STORAGE_KEY = 'kids_library_v1';
 const DEFAULT_STATE = {
-  version: 3,
+  version: 4,
   kids: [],
   books: [],
   reviews: [],
-  settings: { lastScanLocation: 'backstock' }
+  settings: { lastScanChoice: 'owned-backstock' }
 };
 
 function migrate(s) {
   if (!s.version || s.version < 2) {
     s.version = 2;
-    s.settings = s.settings || { lastScanLocation: 'backstock' };
+    s.settings = s.settings || {};
     s.books = (s.books || []).map(b => ({
       ...b,
       location: b.location || 'accessible',
@@ -340,24 +391,34 @@ function migrate(s) {
   }
   if (s.version < 3) {
     s.version = 3;
-    // Per-kid read counts. We can't attribute the old per-book readCount, so reset.
     s.books = (s.books || []).map(b => {
       const { readCount, ...rest } = b;
       return { ...rest, readsByKid: b.readsByKid || {} };
     });
   }
+  if (s.version < 4) {
+    s.version = 4;
+    s.settings = s.settings || {};
+    if (!s.settings.lastScanChoice) {
+      // Map old lastScanLocation to combined choice
+      const loc = s.settings.lastScanLocation || 'backstock';
+      s.settings.lastScanChoice = `owned-${loc}`;
+    }
+    s.books = (s.books || []).map(b => ({
+      ...b,
+      source: b.source || 'owned'
+    }));
+  }
   return s;
-}
-
-function totalReads(bk) {
-  return Object.values(bk.readsByKid || {}).reduce((s, n) => s + n, 0);
 }
 
 let state = loadState();
 let filterKid = 'all';
 let filterStatus = 'all';
 let filterLoc = 'all';
-let rotationDecisions = {}; // isbn -> 'keep' | 'hit' | 'ignored'
+let rotationDecisions = {};
+let manualMode = 'isbn';
+let pendingPhotoDataUrl = null;
 
 function loadState() {
   try {
@@ -372,6 +433,15 @@ function loadState() {
 }
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+function totalReads(bk) {
+  return Object.values(bk.readsByKid || {}).reduce((s, n) => s + n, 0);
+}
+function parseScanChoice(choice) {
+  // 'owned-backstock' | 'owned-accessible' | 'library'
+  if (choice === 'library') return { source: 'library', location: 'accessible' };
+  const [source, location] = choice.split('-');
+  return { source: source || 'owned', location: location || 'backstock' };
+}
 
 /* ===== TABS ===== */
 document.querySelectorAll('nav.tabs button').forEach(btn => {
@@ -380,7 +450,7 @@ document.querySelectorAll('nav.tabs button').forEach(btn => {
 function switchTab(name) {
   document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === name));
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === 'tab-' + name));
-  if (name !== 'scan') stopScanner();
+  if (name !== 'add') stopScanner();
   if (name === 'library') renderLibrary();
   if (name === 'kids') renderKids();
   if (name === 'rotate') renderRotate();
@@ -489,7 +559,10 @@ function renderLibrary() {
   const empty = document.getElementById('libEmpty');
   let books = state.books.slice().sort((a,b) => (b.addedDate||'').localeCompare(a.addedDate||''));
 
-  if (filterLoc !== 'all') books = books.filter(b => b.location === filterLoc);
+  if (filterLoc === 'library') books = books.filter(b => b.source === 'library');
+  else if (filterLoc === 'accessible') books = books.filter(b => b.source !== 'library' && b.location === 'accessible');
+  else if (filterLoc === 'backstock') books = books.filter(b => b.source !== 'library' && b.location === 'backstock');
+
   if (filterStatus !== 'all' && filterKid !== 'all') {
     books = books.filter(bk => {
       const hasReview = state.reviews.some(r => r.kidId === filterKid && r.bookIsbn === bk.isbn);
@@ -512,11 +585,15 @@ function renderLibrary() {
     const reviewsForBook = state.reviews.filter(r => r.bookIsbn === bk.isbn);
     const avg = reviewsForBook.length ? (reviewsForBook.reduce((s, r) => s + (r.rating||0), 0) / reviewsForBook.length).toFixed(1) : null;
     const coverStyle = bk.cover ? `background-image: url('${escapeAttr(bk.cover)}');` : '';
+    const isLibrary = bk.source === 'library';
     const onShelf = bk.location === 'accessible';
+    const cornerClass = isLibrary ? 'library' : (onShelf ? 'shelf' : 'backstock');
+    const cornerText = isLibrary ? 'LIB' : (onShelf ? 'SHELF' : 'STOCK');
+    const dim = !isLibrary && !onShelf;
     const reads = totalReads(bk);
     return `
-      <div class="book ${onShelf ? '' : 'backstock'}" onclick="openBook('${bk.isbn}')">
-        <span class="corner-badge ${onShelf ? 'shelf' : 'backstock'}">${onShelf ? 'SHELF' : 'STOCK'}</span>
+      <div class="book ${dim ? 'backstock' : ''}" onclick="openBook('${bk.isbn}')">
+        <span class="corner-badge ${cornerClass}">${cornerText}</span>
         <div class="cover" style="${coverStyle}">${bk.cover ? '' : escapeHtml(bk.title)}</div>
         <div class="meta">
           <div class="title">${escapeHtml(bk.title)}</div>
@@ -556,7 +633,11 @@ window.openBook = function(isbn) {
     ? state.kids.map(k => `<button class="pill" onclick="newReview('${isbn}','${k.id}')">+ ${escapeHtml(k.name)}</button>`).join('')
     : '<p class="muted">Add a kid first (Kids tab) so you can review books.</p>';
 
+  const isLibrary = bk.source === 'library';
   const onShelf = bk.location === 'accessible';
+  const locationBadge = isLibrary
+    ? '<span class="badge library">📕 Library book</span>'
+    : `<span class="badge ${onShelf ? 'shelf' : 'backstock'}">${onShelf ? '📚 On shelf' : '📦 Backstock'}</span>`;
   const otherLocLabel = onShelf ? 'Move to backstock' : 'Move to shelf';
 
   openModal(`
@@ -567,16 +648,19 @@ window.openBook = function(isbn) {
         <h2 style="margin:0;">${escapeHtml(bk.title)}</h2>
         <div class="muted" style="margin-top:2px;">${escapeHtml((bk.authors||[]).join(', '))}${bk.publishYear ? ' · ' + escapeHtml(bk.publishYear) : ''}</div>
         <div class="pill-row" style="margin-top:6px;">
-          <span class="badge ${onShelf ? 'shelf' : 'backstock'}">${onShelf ? '📚 On shelf' : '📦 Backstock'}</span>
+          ${locationBadge}
           <span class="badge reads">📖 ${totalReads(bk)} reads total</span>
         </div>
         ${bk.subjects && bk.subjects.length ? `<div class="pill-row" style="margin-top:6px;">${bk.subjects.slice(0,4).map(s => `<span class="badge teal">${escapeHtml(s)}</span>`).join('')}</div>` : ''}
-        <div class="muted" style="margin-top:6px; font-size:11px;">ISBN ${escapeHtml(bk.isbn)}</div>
+        ${bk.isbn ? `<div class="muted" style="margin-top:6px; font-size:11px;">ISBN ${escapeHtml(bk.isbn)}</div>` : ''}
       </div>
     </div>
 
     <div class="row" style="margin-top:14px;">
-      <button class="ghost small" onclick="toggleLocation('${isbn}')">${otherLocLabel}</button>
+      ${isLibrary
+        ? `<button class="ghost small" onclick="convertToOwned('${isbn}')">Convert to owned</button>`
+        : `<button class="ghost small" onclick="toggleLocation('${isbn}')">${otherLocLabel}</button>`}
+      ${!isLibrary ? `<button class="ghost small" onclick="convertToLibrary('${isbn}')">Mark as library book</button>` : ''}
     </div>
 
     <h3 style="margin-top:18px;">Times read</h3>
@@ -637,6 +721,25 @@ window.toggleLocation = function(isbn) {
   renderLibrary();
   toast(newLoc === 'accessible' ? '📚 Moved to shelf' : '📦 Moved to backstock');
 };
+window.convertToLibrary = function(isbn) {
+  const bk = state.books.find(b => b.isbn === isbn);
+  if (!bk) return;
+  bk.source = 'library';
+  bk.location = 'accessible';
+  saveState();
+  openBook(isbn);
+  renderLibrary();
+  toast('📕 Marked as library book');
+};
+window.convertToOwned = function(isbn) {
+  const bk = state.books.find(b => b.isbn === isbn);
+  if (!bk) return;
+  bk.source = 'owned';
+  saveState();
+  openBook(isbn);
+  renderLibrary();
+  toast('Converted to owned');
+};
 window.deleteBook = function(isbn) {
   if (!confirm('Remove this book and all its reviews?')) return;
   state.books = state.books.filter(b => b.isbn !== isbn);
@@ -692,6 +795,15 @@ window.saveReview = function(isbn, kidId) {
   saveState(); closeModal(); renderLibrary(); toast('Review saved');
 };
 
+/* ===== ADD TAB - manual mode picker ===== */
+document.querySelectorAll('#manualModePicker [data-mode]').forEach(b => {
+  b.addEventListener('click', () => {
+    manualMode = b.dataset.mode;
+    document.querySelectorAll('#manualModePicker [data-mode]').forEach(x => x.setAttribute('aria-selected', x.dataset.mode === manualMode));
+    document.querySelectorAll('.manual-section').forEach(s => s.classList.toggle('active', s.id === 'manual-' + manualMode));
+  });
+});
+
 /* ===== SCANNING ===== */
 let videoStream = null;
 let detector = null;
@@ -724,36 +836,23 @@ async function startScanner() {
   }
   if (window.ZXingBrowser) {
     try {
-      // Hint ZXing to focus on book barcode formats. The DecodeHintType.POSSIBLE_FORMATS
-      // enum value is 2 (verified from the ZXing source).
       const BF = window.ZXingBrowser.BarcodeFormat;
       const hints = new Map();
       hints.set(2, [BF.EAN_13, BF.UPC_A, BF.EAN_8, BF.UPC_E]);
-      hints.set(3, true); // TRY_HARDER
-
+      hints.set(3, true);
       zxingReader = new window.ZXingBrowser.BrowserMultiFormatReader(hints);
       document.getElementById('scanWrap').classList.add('active');
       document.getElementById('btnStartScan').style.display = 'none';
       document.getElementById('btnStopScan').style.display = 'inline-flex';
-
-      // Request the back camera at high resolution. Lower resolutions can make
-      // barcode bars too narrow to decode reliably on iPhone.
       const constraints = {
         audio: false,
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        }
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
       };
-
-      // On-screen diagnostics: count frames processed and show last decode error.
       let _frames = 0;
       window._scanDiag = setInterval(() => {
         const hint = document.querySelector('.scan-hint');
         if (hint) hint.textContent = `Scanning… ${_frames} frames processed`;
       }, 300);
-
       const controls = await zxingReader.decodeFromConstraints(constraints, 'video', (result, err) => {
         _frames++;
         if (result) {
@@ -772,7 +871,7 @@ async function startScanner() {
     }
   }
   document.getElementById('scanFallback').innerHTML =
-    "Your browser can't scan barcodes. Type the ISBN by hand below — it's the 13-digit number above the barcode.";
+    "Your browser can't scan barcodes. Type the ISBN by hand below.";
 }
 function stopScanner() {
   if (scanLoop) { clearInterval(scanLoop); scanLoop = null; }
@@ -802,30 +901,33 @@ async function lookupAndAdd(isbn) {
     openBook(isbn);
     return;
   }
-  document.getElementById('lookupResult').innerHTML = `<div class="card"><p class="muted">Looking up ISBN ${escapeHtml(isbn)}…</p></div>`;
+  const lookupResult = document.getElementById('lookupResult');
+  lookupResult.innerHTML = `<div class="card"><p class="muted">Looking up ISBN ${escapeHtml(isbn)}…</p></div>`;
+  // Scroll the result into view so user sees it immediately
+  lookupResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
   const book = await fetchBook(isbn);
   if (!book) {
-    document.getElementById('lookupResult').innerHTML = `
+    lookupResult.innerHTML = `
       <div class="card">
-        <h3>Couldn't find it automatically</h3>
-        <p class="muted">No record for ISBN ${escapeHtml(isbn)}. Add it manually:</p>
-        <label>Title</label><input type="text" id="mTitle" />
-        <label>Author</label><input type="text" id="mAuthor" />
-        <label>Where does this go?</label>
-        <select id="mLocation">
-          <option value="backstock" ${state.settings.lastScanLocation==='backstock'?'selected':''}>📦 Backstock</option>
-          <option value="accessible" ${state.settings.lastScanLocation==='accessible'?'selected':''}>📚 On accessible shelf</option>
-        </select>
-        <button class="primary" style="margin-top:10px;" onclick="addManualBook('${isbn}')">Add to library</button>
+        <h3>Couldn't find ISBN ${escapeHtml(isbn)}</h3>
+        <p class="muted">Try a manual entry mode below — by ISBN (with a corrected number), by cover photo, or by title &amp; author.</p>
+        <button class="ghost" onclick="document.getElementById('lookupResult').innerHTML=''">Dismiss</button>
       </div>`;
+    lookupResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
-  const lastLoc = state.settings.lastScanLocation || 'backstock';
-  document.getElementById('lookupResult').innerHTML = `
+  showPreview(book, isbn);
+}
+
+function showPreview(book, scannedIsbn) {
+  const lookupResult = document.getElementById('lookupResult');
+  const lastChoice = state.settings.lastScanChoice || 'owned-backstock';
+  lookupResult.innerHTML = `
     <div class="card">
       <h3>Add this book?</h3>
       <div class="muted" style="font-size:12px; margin-bottom:8px;">
-        Scanned ISBN: <b style="font-family: ui-monospace, monospace;">${escapeHtml(isbn)}</b>
+        Scanned ISBN: <b style="font-family: ui-monospace, monospace;">${escapeHtml(scannedIsbn)}</b>
         — verify this matches the number under the barcode on the back of your book.
       </div>
       <div style="display:flex; gap:14px;">
@@ -839,8 +941,9 @@ async function lookupAndAdd(isbn) {
       </div>
       <label style="margin-top:10px;">Where does this go?</label>
       <select id="addLocation">
-        <option value="backstock" ${lastLoc==='backstock'?'selected':''}>📦 Backstock</option>
-        <option value="accessible" ${lastLoc==='accessible'?'selected':''}>📚 On accessible shelf</option>
+        <option value="owned-backstock" ${lastChoice==='owned-backstock'?'selected':''}>📦 Backstock (owned)</option>
+        <option value="owned-accessible" ${lastChoice==='owned-accessible'?'selected':''}>📚 On accessible shelf (owned)</option>
+        <option value="library" ${lastChoice==='library'?'selected':''}>📕 Library book</option>
       </select>
       <div class="row" style="margin-top:10px;">
         <button class="primary" id="btnConfirmAdd">Add to library</button>
@@ -850,13 +953,13 @@ async function lookupAndAdd(isbn) {
       <div id="wrongBookForm" style="display:none; margin-top:10px;">
         <h3 style="margin-top:0;">Option 1: Look up by a different ISBN</h3>
         <div class="row">
-          <input type="text" inputmode="numeric" id="correctIsbn" value="${escapeAttr(isbn)}" />
+          <input type="text" inputmode="numeric" id="correctIsbn" value="${escapeAttr(scannedIsbn)}" />
           <button class="secondary" id="btnRetryLookup">Look up</button>
         </div>
-        <p class="muted" style="font-size:12px; margin-top:6px;">ISBN-13 is the 13-digit number that starts with 978 or 979, printed under the barcode.</p>
+        <p class="muted" style="font-size:12px; margin-top:6px;">ISBN-13 is the 13-digit number that starts with 978 or 979.</p>
 
         <h3 style="margin-top:14px;">Option 2: Just fix the title &amp; author</h3>
-        <p class="muted" style="font-size:12px;">Use this when the ISBN is right but the database returned wrong metadata. Keeps the scanned ISBN, replaces just the title and author.</p>
+        <p class="muted" style="font-size:12px;">Keeps the scanned ISBN, replaces just the title and author.</p>
         <label>Title</label>
         <input type="text" id="overrideTitle" value="${escapeAttr(book.title || '')}" />
         <label>Author</label>
@@ -866,78 +969,59 @@ async function lookupAndAdd(isbn) {
         </div>
       </div>
     </div>`;
+  lookupResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
   document.getElementById('btnConfirmAdd').onclick = () => {
-    const loc = document.getElementById('addLocation').value;
+    const choice = document.getElementById('addLocation').value;
+    const { source, location } = parseScanChoice(choice);
     book.addedDate = new Date().toISOString();
-    book.location = loc;
-    book.placedOnShelfAt = loc === 'accessible' ? book.addedDate : null;
+    book.source = source;
+    book.location = location;
+    book.placedOnShelfAt = location === 'accessible' ? book.addedDate : null;
     book.readsByKid = {};
     state.books.push(book);
-    state.settings.lastScanLocation = loc;
+    state.settings.lastScanChoice = choice;
     saveState();
-    document.getElementById('lookupResult').innerHTML = '';
+    lookupResult.innerHTML = '';
     renderRecentScans();
-    toast(`Added to ${loc === 'accessible' ? 'shelf' : 'backstock'}: ${book.title}`);
+    toast(`Added: ${book.title}`);
     document.getElementById('manualIsbn').value = '';
   };
-  document.getElementById('btnCancelAdd').onclick = () => {
-    document.getElementById('lookupResult').innerHTML = '';
-  };
+  document.getElementById('btnCancelAdd').onclick = () => { lookupResult.innerHTML = ''; };
   document.getElementById('btnWrongBook').onclick = () => {
     document.getElementById('wrongBookForm').style.display = 'block';
-    document.getElementById('correctIsbn').focus();
   };
   document.getElementById('btnRetryLookup').onclick = () => {
     const newIsbn = document.getElementById('correctIsbn').value.replace(/[^\dXx]/g,'');
-    if (!newIsbn || newIsbn === isbn) { toast('Enter a different ISBN'); return; }
-    document.getElementById('lookupResult').innerHTML = '';
+    if (!newIsbn || newIsbn === scannedIsbn) { toast('Enter a different ISBN'); return; }
+    lookupResult.innerHTML = '';
     lookupAndAdd(newIsbn);
   };
   document.getElementById('btnSaveOverride').onclick = () => {
     const newTitle = document.getElementById('overrideTitle').value.trim();
     const newAuthor = document.getElementById('overrideAuthor').value.trim();
     if (!newTitle) { toast('Title is required'); return; }
-    const loc = document.getElementById('addLocation').value;
+    const choice = document.getElementById('addLocation').value;
+    const { source, location } = parseScanChoice(choice);
     const fixed = {
       ...book,
       title: newTitle,
       authors: newAuthor ? newAuthor.split(',').map(s => s.trim()).filter(Boolean) : [],
-      // Drop the wrong cover and subjects — they came from the wrong record
       cover: null,
       subjects: [],
       addedDate: new Date().toISOString(),
-      location: loc,
-      placedOnShelfAt: loc === 'accessible' ? new Date().toISOString() : null,
+      source, location,
+      placedOnShelfAt: location === 'accessible' ? new Date().toISOString() : null,
       readsByKid: {}
     };
     state.books.push(fixed);
-    state.settings.lastScanLocation = loc;
+    state.settings.lastScanChoice = choice;
     saveState();
-    document.getElementById('lookupResult').innerHTML = '';
+    lookupResult.innerHTML = '';
     renderRecentScans();
     toast(`Added (overridden): ${newTitle}`);
-    document.getElementById('manualIsbn').value = '';
   };
 }
-
-window.addManualBook = function(isbn) {
-  const title = document.getElementById('mTitle').value.trim();
-  const author = document.getElementById('mAuthor').value.trim();
-  const loc = document.getElementById('mLocation').value;
-  if (!title) { toast('Title required'); return; }
-  state.books.push({
-    isbn, title, authors: author ? [author] : [], cover: null, subjects: [], publishYear: null,
-    addedDate: new Date().toISOString(),
-    location: loc,
-    placedOnShelfAt: loc === 'accessible' ? new Date().toISOString() : null,
-    readsByKid: {}
-  });
-  state.settings.lastScanLocation = loc;
-  saveState();
-  document.getElementById('lookupResult').innerHTML = '';
-  renderRecentScans();
-  toast(`Added to ${loc === 'accessible' ? 'shelf' : 'backstock'}: ${title}`);
-};
 
 async function fetchBook(isbn) {
   try {
@@ -974,31 +1058,146 @@ async function fetchBook(isbn) {
   return null;
 }
 
+/* ===== PHOTO MANUAL ENTRY ===== */
+document.getElementById('coverPhotoInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  // Resize + compress to keep localStorage usage reasonable.
+  const dataUrl = await fileToCompressedDataUrl(file, 400, 600, 0.75);
+  pendingPhotoDataUrl = dataUrl;
+  const preview = document.getElementById('coverPhotoPreview');
+  preview.style.display = 'block';
+  preview.style.backgroundImage = `url('${dataUrl}')`;
+});
+
+function fileToCompressedDataUrl(file, maxW, maxH, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      const ratio = Math.min(maxW / w, maxH / h, 1);
+      w = Math.round(w * ratio);
+      h = Math.round(h * ratio);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = reject;
+    const fr = new FileReader();
+    fr.onload = () => { img.src = fr.result; };
+    fr.onerror = reject;
+    fr.readAsDataURL(file);
+  });
+}
+
+document.getElementById('btnSavePhotoBook').addEventListener('click', () => {
+  const title = document.getElementById('photoTitle').value.trim();
+  const author = document.getElementById('photoAuthor').value.trim();
+  if (!title) { toast('Title required'); return; }
+  saveManualBook({
+    title,
+    author,
+    cover: pendingPhotoDataUrl
+  });
+  // reset
+  document.getElementById('photoTitle').value = '';
+  document.getElementById('photoAuthor').value = '';
+  document.getElementById('coverPhotoInput').value = '';
+  document.getElementById('coverPhotoPreview').style.display = 'none';
+  pendingPhotoDataUrl = null;
+});
+
+document.getElementById('btnSaveTextBook').addEventListener('click', () => {
+  const title = document.getElementById('textTitle').value.trim();
+  const author = document.getElementById('textAuthor').value.trim();
+  if (!title) { toast('Title required'); return; }
+  saveManualBook({ title, author, cover: null });
+  document.getElementById('textTitle').value = '';
+  document.getElementById('textAuthor').value = '';
+});
+
+function saveManualBook({ title, author, cover }) {
+  // Prompt for location via the sticky-default dropdown logic
+  const lastChoice = state.settings.lastScanChoice || 'owned-backstock';
+  const lookupResult = document.getElementById('lookupResult');
+  lookupResult.innerHTML = `
+    <div class="card">
+      <h3>Add this book?</h3>
+      <div style="display:flex; gap:14px;">
+        <div class="cover" style="width:90px; height:135px; aspect-ratio:auto; flex:0 0 90px; ${cover ? `background:url('${escapeAttr(cover)}') center/cover;` : 'background:#ece2d2;'} border-radius:8px;"></div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:600;">${escapeHtml(title)}</div>
+          <div class="muted">${escapeHtml(author || '(no author)')}</div>
+        </div>
+      </div>
+      <label style="margin-top:10px;">Where does this go?</label>
+      <select id="manualLocation">
+        <option value="owned-backstock" ${lastChoice==='owned-backstock'?'selected':''}>📦 Backstock (owned)</option>
+        <option value="owned-accessible" ${lastChoice==='owned-accessible'?'selected':''}>📚 On accessible shelf (owned)</option>
+        <option value="library" ${lastChoice==='library'?'selected':''}>📕 Library book</option>
+      </select>
+      <div class="row" style="margin-top:10px;">
+        <button class="primary" id="btnManualConfirm">Add to library</button>
+        <button class="ghost" id="btnManualCancel">Cancel</button>
+      </div>
+    </div>`;
+  lookupResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('btnManualConfirm').onclick = () => {
+    const choice = document.getElementById('manualLocation').value;
+    const { source, location } = parseScanChoice(choice);
+    const fakeIsbn = 'manual-' + uid();
+    state.books.push({
+      isbn: fakeIsbn,
+      title,
+      authors: author ? author.split(',').map(s => s.trim()).filter(Boolean) : [],
+      cover: cover || null,
+      subjects: [],
+      publishYear: null,
+      addedDate: new Date().toISOString(),
+      source, location,
+      placedOnShelfAt: location === 'accessible' ? new Date().toISOString() : null,
+      readsByKid: {}
+    });
+    state.settings.lastScanChoice = choice;
+    saveState();
+    lookupResult.innerHTML = '';
+    renderRecentScans();
+    toast(`Added: ${title}`);
+  };
+  document.getElementById('btnManualCancel').onclick = () => { lookupResult.innerHTML = ''; };
+}
+
 function renderRecentScans() {
   const recent = state.books.slice().sort((a,b)=>(b.addedDate||'').localeCompare(a.addedDate||'')).slice(0,5);
   if (!recent.length) { document.getElementById('recentScansCard').style.display = 'none'; return; }
   document.getElementById('recentScansCard').style.display = 'block';
-  document.getElementById('recentScans').innerHTML = recent.map(b => `
-    <div class="kid-row" onclick="openBook('${b.isbn}')" style="cursor:pointer;">
-      <div class="cover" style="width:36px; height:54px; aspect-ratio:auto; flex:0 0 36px; ${b.cover ? `background:url('${escapeAttr(b.cover)}') center/cover;` : 'background:#ece2d2;'} border-radius:4px;"></div>
-      <div class="kid-info">
-        <div class="kid-name" style="font-size:14px;">${escapeHtml(b.title)} <span class="badge ${b.location==='accessible'?'shelf':'backstock'}" style="margin-left:4px;">${b.location==='accessible'?'shelf':'stock'}</span></div>
-        <div class="kid-meta">${escapeHtml((b.authors||[]).join(', '))}</div>
-      </div>
-    </div>
-  `).join('');
+  document.getElementById('recentScans').innerHTML = recent.map(b => {
+    const isLib = b.source === 'library';
+    const tag = isLib ? 'lib' : (b.location === 'accessible' ? 'shelf' : 'stock');
+    const tagClass = isLib ? 'library' : (b.location === 'accessible' ? 'shelf' : 'backstock');
+    return `
+      <div class="kid-row" onclick="openBook('${b.isbn}')" style="cursor:pointer;">
+        <div class="cover" style="width:36px; height:54px; aspect-ratio:auto; flex:0 0 36px; ${b.cover ? `background:url('${escapeAttr(b.cover)}') center/cover;` : 'background:#ece2d2;'} border-radius:4px;"></div>
+        <div class="kid-info">
+          <div class="kid-name" style="font-size:14px;">${escapeHtml(b.title)} <span class="badge ${tagClass}" style="margin-left:4px;">${tag}</span></div>
+          <div class="kid-meta">${escapeHtml((b.authors||[]).join(', '))}</div>
+        </div>
+      </div>`;
+  }).join('');
 }
 
-/* ===== ROTATE TAB ===== */
+/* ===== ROTATE ===== */
 function renderRotate() {
-  rotationDecisions = rotationDecisions || {};
   const wrap = document.getElementById('rotateList');
   const empty = document.getElementById('rotateEmpty');
   const actions = document.getElementById('rotateActions');
   const out = document.getElementById('rotatePromptOut');
   out.innerHTML = '';
 
-  const accessible = state.books.filter(b => b.location === 'accessible')
+  // Owned + accessible only — library books are excluded
+  const accessible = state.books.filter(b => b.source !== 'library' && b.location === 'accessible')
     .sort((a,b) => (a.placedOnShelfAt||'').localeCompare(b.placedOnShelfAt||''));
   if (!accessible.length) {
     wrap.innerHTML = '';
@@ -1067,11 +1266,6 @@ document.getElementById('btnRotateApply').addEventListener('click', () => {
 });
 
 document.getElementById('btnRotateBuildPrompt').addEventListener('click', () => {
-  const accessibleNow = state.books.filter(b => b.location === 'accessible');
-  if (!accessibleNow.length && !Object.keys(rotationDecisions).length) {
-    toast('Mark some books first, or move some to the shelf');
-    return;
-  }
   const text = buildRotationPrompt();
   document.getElementById('rotatePromptOut').innerHTML = `
     <div class="card" style="margin-top:10px;">
@@ -1090,12 +1284,10 @@ document.getElementById('btnRotateBuildPrompt').addEventListener('click', () => 
 
 function fmtReads(reads) {
   if (!reads) return 'no recorded reads';
-  const parts = Object.entries(reads)
-    .filter(([_, n]) => n > 0)
-    .map(([kid, n]) => {
-      const k = state.kids.find(x => x.id === kid);
-      return `${k ? k.name : 'unknown'} ${n}`;
-    });
+  const parts = Object.entries(reads).filter(([_, n]) => n > 0).map(([kid, n]) => {
+    const k = state.kids.find(x => x.id === kid);
+    return `${k ? k.name : 'unknown'} ${n}`;
+  });
   return parts.length ? parts.join(', ') : 'no recorded reads';
 }
 
@@ -1106,7 +1298,6 @@ function buildRotationPrompt() {
   lines.push("Use web search if helpful to assess fit. Output a ranked list with a 1-2 sentence reason per book and which kid it's mainly aimed at.");
   lines.push("");
 
-  // Kids
   if (state.kids.length) {
     lines.push("OUR READERS:");
     state.kids.forEach(k => {
@@ -1132,7 +1323,6 @@ function buildRotationPrompt() {
     lines.push("");
   }
 
-  // Just rotated out / decisions
   const decided = Object.entries(rotationDecisions);
   const hits = decided.filter(([_, d]) => d === 'hit');
   const ignored = decided.filter(([_, d]) => d === 'ignored');
@@ -1163,7 +1353,16 @@ function buildRotationPrompt() {
     lines.push("");
   }
 
-  // Past rotation history (from book.lastShelfStint)
+  // Currently borrowed library books — include for context
+  const libraryBooks = state.books.filter(b => b.source === 'library');
+  if (libraryBooks.length) {
+    lines.push("CURRENTLY BORROWED FROM THE LIBRARY (not part of rotation but kids may be engaging with them):");
+    libraryBooks.forEach(b => {
+      lines.push(`  • ${b.title} — ${(b.authors||[]).join(', ')} — reads: ${fmtReads(b.readsByKid)}`);
+    });
+    lines.push("");
+  }
+
   const historic = state.books.filter(b => b.lastShelfStint && b.location === 'backstock');
   if (historic.length) {
     lines.push("PRIOR ROTATION HISTORY (in backstock, with last shelf outcome):");
@@ -1173,8 +1372,7 @@ function buildRotationPrompt() {
     lines.push("");
   }
 
-  // Backstock candidates
-  const backstock = state.books.filter(b => b.location === 'backstock');
+  const backstock = state.books.filter(b => b.source !== 'library' && b.location === 'backstock');
   if (backstock.length) {
     lines.push(`BACKSTOCK (${backstock.length} books — candidates to bring forward):`);
     backstock.forEach(b => {
@@ -1183,7 +1381,7 @@ function buildRotationPrompt() {
     });
     lines.push("");
   } else {
-    lines.push("(No books in backstock yet — add some via the Scan tab and set their location to Backstock.)");
+    lines.push("(No books in backstock yet — add some via the Add tab.)");
   }
 
   return lines.join('\n');
@@ -1238,8 +1436,11 @@ function buildPrompt(kidIds) {
     lines.push("");
   }
   if (state.books.length) {
-    lines.push("OUR FULL LIBRARY (already own — do NOT re-recommend these):");
-    state.books.forEach(b => { lines.push(`  • ${b.title} — ${(b.authors||[]).join(', ')}`); });
+    lines.push("OUR FULL LIBRARY (already own or currently borrowed — do NOT re-recommend these):");
+    state.books.forEach(b => {
+      const tag = b.source === 'library' ? ' [library book]' : '';
+      lines.push(`  • ${b.title} — ${(b.authors||[]).join(', ')}${tag}`);
+    });
   }
   return lines.join('\n');
 }
@@ -1249,7 +1450,7 @@ window.buildPromptForAll = function() { showPrompt(buildPrompt(state.kids.map(k 
 
 function showPrompt(text) {
   document.getElementById('recommendOutput').innerHTML = `
-    <p class="muted">Copy the text below and paste it into the Claude chat. I'll do the recommendations from there.</p>
+    <p class="muted">Copy the text below and paste it into the Claude chat.</p>
     <pre class="export" id="promptOut">${escapeHtml(text)}</pre>
     <div class="row" style="margin-top:8px;">
       <button class="primary" id="btnCopyPrompt">📋 Copy to clipboard</button>
@@ -1284,11 +1485,34 @@ document.getElementById('importFile').addEventListener('change', async (e) => {
     let data = JSON.parse(text);
     data = migrate(data);
     if (!data.kids || !data.books) throw new Error('Not a library file');
-    if (confirm('Replace your current library with the imported file? (Cancel to merge instead)')) {
+    if (confirm('Replace your current library with the imported file? (Cancel to merge, summing read counts for books on both devices)')) {
       state = Object.assign(structuredClone(DEFAULT_STATE), data);
     } else {
+      // MERGE: for shared books, sum readsByKid and take latest stint
       data.kids.forEach(k => { if (!state.kids.some(x => x.id === k.id)) state.kids.push(k); });
-      data.books.forEach(b => { if (!state.books.some(x => x.isbn === b.isbn)) state.books.push(b); });
+      data.books.forEach(b => {
+        const existing = state.books.find(x => x.isbn === b.isbn);
+        if (existing) {
+          // Sum reads per kid
+          const merged = { ...(existing.readsByKid || {}) };
+          for (const [kid, n] of Object.entries(b.readsByKid || {})) {
+            merged[kid] = (merged[kid] || 0) + n;
+          }
+          existing.readsByKid = merged;
+          // Prefer non-null cover
+          if (!existing.cover && b.cover) existing.cover = b.cover;
+          // Take later placedOnShelfAt
+          if (b.placedOnShelfAt && (!existing.placedOnShelfAt || b.placedOnShelfAt > existing.placedOnShelfAt)) {
+            existing.placedOnShelfAt = b.placedOnShelfAt;
+          }
+          // Take latest lastShelfStint
+          if (b.lastShelfStint && (!existing.lastShelfStint || (b.lastShelfStint.removedAt || '') > (existing.lastShelfStint.removedAt || ''))) {
+            existing.lastShelfStint = b.lastShelfStint;
+          }
+        } else {
+          state.books.push(b);
+        }
+      });
       data.reviews.forEach(r => { if (!state.reviews.some(x => x.id === r.id)) state.reviews.push(r); });
     }
     saveState();
