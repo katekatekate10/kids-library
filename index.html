@@ -824,6 +824,10 @@ async function lookupAndAdd(isbn) {
   document.getElementById('lookupResult').innerHTML = `
     <div class="card">
       <h3>Add this book?</h3>
+      <div class="muted" style="font-size:12px; margin-bottom:8px;">
+        Scanned ISBN: <b style="font-family: ui-monospace, monospace;">${escapeHtml(isbn)}</b>
+        — verify this matches the number under the barcode on the back of your book.
+      </div>
       <div style="display:flex; gap:14px;">
         <div class="cover" style="width:90px; height:135px; aspect-ratio:auto; flex:0 0 90px; ${book.cover ? `background:url('${escapeAttr(book.cover)}') center/cover;` : 'background:#ece2d2;'} border-radius:8px;"></div>
         <div style="flex:1; min-width:0;">
@@ -840,7 +844,16 @@ async function lookupAndAdd(isbn) {
       </select>
       <div class="row" style="margin-top:10px;">
         <button class="primary" id="btnConfirmAdd">Add to library</button>
+        <button class="ghost" id="btnWrongBook">Wrong book?</button>
         <button class="ghost" id="btnCancelAdd">Cancel</button>
+      </div>
+      <div id="wrongBookForm" style="display:none; margin-top:10px;">
+        <label>Type the ISBN from the back of the book</label>
+        <div class="row">
+          <input type="text" inputmode="numeric" id="correctIsbn" value="${escapeAttr(isbn)}" />
+          <button class="secondary" id="btnRetryLookup">Look up</button>
+        </div>
+        <p class="muted" style="font-size:12px; margin-top:6px;">ISBN-13 is the 13-digit number that starts with 978 or 979, printed under the barcode.</p>
       </div>
     </div>`;
   document.getElementById('btnConfirmAdd').onclick = () => {
@@ -848,7 +861,7 @@ async function lookupAndAdd(isbn) {
     book.addedDate = new Date().toISOString();
     book.location = loc;
     book.placedOnShelfAt = loc === 'accessible' ? book.addedDate : null;
-    book.readCount = 0;
+    book.readsByKid = {};
     state.books.push(book);
     state.settings.lastScanLocation = loc;
     saveState();
@@ -859,6 +872,16 @@ async function lookupAndAdd(isbn) {
   };
   document.getElementById('btnCancelAdd').onclick = () => {
     document.getElementById('lookupResult').innerHTML = '';
+  };
+  document.getElementById('btnWrongBook').onclick = () => {
+    document.getElementById('wrongBookForm').style.display = 'block';
+    document.getElementById('correctIsbn').focus();
+  };
+  document.getElementById('btnRetryLookup').onclick = () => {
+    const newIsbn = document.getElementById('correctIsbn').value.replace(/[^\dXx]/g,'');
+    if (!newIsbn || newIsbn === isbn) { toast('Enter a different ISBN'); return; }
+    document.getElementById('lookupResult').innerHTML = '';
+    lookupAndAdd(newIsbn);
   };
 }
 
@@ -872,7 +895,7 @@ window.addManualBook = function(isbn) {
     addedDate: new Date().toISOString(),
     location: loc,
     placedOnShelfAt: loc === 'accessible' ? new Date().toISOString() : null,
-    readCount: 0
+    readsByKid: {}
   });
   state.settings.lastScanLocation = loc;
   saveState();
