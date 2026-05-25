@@ -724,12 +724,44 @@ async function startScanner() {
   }
   if (window.ZXingBrowser) {
     try {
-      zxingReader = new window.ZXingBrowser.BrowserMultiFormatReader();
+      // Hint ZXing to focus on book barcode formats. The DecodeHintType.POSSIBLE_FORMATS
+      // enum value is 2 (verified from the ZXing source).
+      const BF = window.ZXingBrowser.BarcodeFormat;
+      const hints = new Map();
+      hints.set(2, [BF.EAN_13, BF.UPC_A, BF.EAN_8, BF.UPC_E]);
+      hints.set(3, true); // TRY_HARDER
+
+      zxingReader = new window.ZXingBrowser.BrowserMultiFormatReader(hints);
       document.getElementById('scanWrap').classList.add('active');
       document.getElementById('btnStartScan').style.display = 'none';
       document.getElementById('btnStopScan').style.display = 'inline-flex';
-      const controls = await zxingReader.decodeFromVideoDevice(undefined, 'video', (result, err) => {
-        if (result) { const isbn = result.getText(); stopScanner(); lookupAndAdd(isbn); }
+
+      // Request the back camera at high resolution. Lower resolutions can make
+      // barcode bars too narrow to decode reliably on iPhone.
+      const constraints = {
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        }
+      };
+
+      // On-screen diagnostics: count frames processed and show last decode error.
+      let _frames = 0;
+      window._scanDiag = setInterval(() => {
+        const hint = document.querySelector('.scan-hint');
+        if (hint) hint.textContent = `Scanning… ${_frames} frames processed`;
+      }, 300);
+
+      const controls = await zxingReader.decodeFromConstraints(constraints, 'video', (result, err) => {
+        _frames++;
+        if (result) {
+          clearInterval(window._scanDiag);
+          const isbn = result.getText();
+          stopScanner();
+          lookupAndAdd(isbn);
+        }
       });
       zxingReader._controls = controls;
       return;
@@ -744,6 +776,7 @@ async function startScanner() {
 }
 function stopScanner() {
   if (scanLoop) { clearInterval(scanLoop); scanLoop = null; }
+  if (window._scanDiag) { clearInterval(window._scanDiag); window._scanDiag = null; }
   if (videoStream) { videoStream.getTracks().forEach(t => t.stop()); videoStream = null; }
   if (zxingReader) {
     try { zxingReader._controls && zxingReader._controls.stop(); } catch (e) {}
