@@ -202,7 +202,12 @@
   <!-- LIBRARY TAB -->
   <section class="tab" id="tab-library">
     <div class="card">
-      <h3>Filter by reader</h3>
+      <h3>Find a book</h3>
+      <div class="row">
+        <input type="text" id="libSearch" placeholder="Search title or author…" />
+        <button class="secondary small" id="btnLibScan">📷 Scan</button>
+      </div>
+      <h3 style="margin-top:10px;">Filter by reader</h3>
       <div class="pill-row" id="kidFilterRow">
         <button class="pill" data-filter="all" aria-selected="true">All books</button>
       </div>
@@ -416,6 +421,7 @@ let state = loadState();
 let filterKid = 'all';
 let filterStatus = 'all';
 let filterLoc = 'all';
+let libSearch = '';
 let rotationDecisions = {};
 let manualMode = 'isbn';
 let pendingPhotoDataUrl = null;
@@ -540,6 +546,25 @@ document.getElementById('btnAddKid').addEventListener('click', () => editKid('')
 
 /* ===== LIBRARY ===== */
 function renderLibrary() {
+  // Search input — preserve current value across re-renders
+  const searchEl = document.getElementById('libSearch');
+  if (searchEl) {
+    if (searchEl.value !== libSearch) searchEl.value = libSearch;
+    searchEl.oninput = () => { libSearch = searchEl.value; renderLibrary(); };
+  }
+  const scanBtn = document.getElementById('btnLibScan');
+  if (scanBtn) {
+    scanBtn.onclick = () => {
+      // Switch to Add tab and start the scanner. If the scanned ISBN already
+      // exists in the library, the existing lookupAndAdd flow toasts and opens
+      // the book detail directly — which is exactly the "find" behavior.
+      switchTab('add');
+      // Give the tab swap a tick to settle, then kick off the scanner
+      setTimeout(() => { startScanner(); }, 100);
+      toast('Scan to find a book');
+    };
+  }
+
   const kidRow = document.getElementById('kidFilterRow');
   kidRow.innerHTML = `<button class="pill" data-filter="all" aria-selected="${filterKid==='all'}">All books</button>` +
     state.kids.map(k => `<button class="pill" data-filter="${k.id}" aria-selected="${filterKid===k.id}">${escapeHtml(k.name)}</button>`).join('');
@@ -562,6 +587,16 @@ function renderLibrary() {
   if (filterLoc === 'library') books = books.filter(b => b.source === 'library');
   else if (filterLoc === 'accessible') books = books.filter(b => b.source !== 'library' && b.location === 'accessible');
   else if (filterLoc === 'backstock') books = books.filter(b => b.source !== 'library' && b.location === 'backstock');
+
+  // Search filter — title or author substring, case-insensitive
+  if (libSearch.trim()) {
+    const q = libSearch.trim().toLowerCase();
+    books = books.filter(bk => {
+      const title = (bk.title || '').toLowerCase();
+      const authors = (bk.authors || []).join(' ').toLowerCase();
+      return title.includes(q) || authors.includes(q);
+    });
+  }
 
   if (filterStatus !== 'all' && filterKid !== 'all') {
     books = books.filter(bk => {
