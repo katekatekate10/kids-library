@@ -7,6 +7,40 @@ even if picked up months later by someone with no session context.
 
 ---
 
+## ACTION ITEM: Set ANTHROPIC_API_KEY to enable cover OCR
+
+The "✨ Refine from cover" feature (built and deployed) needs an
+Anthropic API key to actually call Claude. Until the key is set:
+
+- The button still appears on photo-only books (discoverable).
+- Clicking it shows a "Refine isn't configured yet" modal with the
+  setup steps, an offer to add title/author manually, and an explicit
+  reassurance that the photo is safely saved.
+- Photo-only books continue to accumulate normally. Nothing is lost.
+
+**Setup steps** (do once):
+
+1. Get an API key at [console.anthropic.com](https://console.anthropic.com)
+   → Account → API Keys → Create Key.
+2. Cloudflare dashboard → Workers & Pages → `kids-library` → Settings.
+3. Environment variables → switch to the **Preview** tab → Add variable.
+4. **Type: Secret (encrypted)**. Plain text gets wiped by git deploys
+   (we've documented this elsewhere; it bit us during initial setup).
+5. Name: `ANTHROPIC_API_KEY`. Value: `sk-ant-…` key.
+6. Save. Trigger a redeploy (push any change to the migration branch,
+   or use the dashboard's "Retry deployment").
+7. **Also do the same on the Production tab** when we promote
+   migration → main, so the feature works in prod too.
+
+After that the Refine button works end-to-end. To validate: open one
+of the 17 photo-only books in the Library tab, click Refine, walk
+through the suggestion modal.
+
+Cost ceiling: ~$0.08/year at our scale (~75 cover lookups/year).
+Anthropic charges per token + per image; Haiku 4.5 vision is cheap.
+
+---
+
 ## OCR cover → title / author / ISBN backfill
 
 **What.** Today the "Add by cover photo" flow saves a book with the

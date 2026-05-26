@@ -508,7 +508,32 @@ window.refineFromCover = async function (isbn: string) {
   try {
     result = await api<RefineResponse>('POST', `/api/books/${encodeURIComponent(isbn)}/refine`);
   } catch (e) {
-    toast('Refine failed: ' + (e as Error).message);
+    const err = e as Error;
+    // Special-case the "no API key set" path: this isn't a bug, it's a
+    // feature waiting on config. Show a dedicated explainer so the user
+    // knows their photo is safe and exactly how to enable OCR later.
+    if (/refine not configured/i.test(err.message) || /\b503\b/.test(err.message)) {
+      openModal(`
+        <button class="close" onclick="closeModal()">×</button>
+        <h2>✨ Refine isn't configured yet</h2>
+        <p>This feature uses Claude vision to read the cover and extract the title, author, and ISBN. It needs an Anthropic API key, which isn't set yet.</p>
+        <p class="muted" style="margin-top:8px;"><b>Your photo is safely saved.</b> Nothing was lost — photo-only books continue to accumulate normally. Once the API key is added, click Refine on any photo-only book to process it.</p>
+        <h3 style="margin-top:14px;">How to enable</h3>
+        <ol class="muted" style="margin: 8px 0; padding-left: 20px; font-size: 13px; line-height: 1.55;">
+          <li>Get an API key at <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a> (Account → API Keys → Create Key).</li>
+          <li>Cloudflare dashboard → Workers &amp; Pages → kids-library → Settings.</li>
+          <li>Environment variables → switch to <b>Preview</b> tab → Add variable.</li>
+          <li>Type: <b>Secret (encrypted)</b>. Name: <code>ANTHROPIC_API_KEY</code>. Value: your key.</li>
+          <li>Save. Push any change to the migration branch (or trigger a redeploy in the dashboard) so the new worker picks it up.</li>
+        </ol>
+        <div class="row" style="margin-top:14px;">
+          <button class="ghost" onclick="editBookMeta('${isbn}')">Add title/author manually</button>
+          <button class="primary" onclick="closeModal()">Close</button>
+        </div>
+      `);
+      return;
+    }
+    toast('Refine failed: ' + err.message);
     closeModal();
     return;
   }
