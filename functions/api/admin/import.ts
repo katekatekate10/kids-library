@@ -1,17 +1,16 @@
 /**
  * POST /api/admin/import
  *
- * Principal-only. Accepts the legacy kids_library_v1 JSON export
- * (the same blob produced by the legacy app's Settings → Export
- * button) and upserts it into D1. Idempotent — re-running with the
- * same blob produces the same final state.
+ * Accepts the legacy kids_library_v1 JSON export (the same blob
+ * produced by the legacy app's Settings → Export button) and upserts
+ * it into D1. Idempotent — re-running with the same blob produces
+ * the same final state.
  *
- * Gating:
- *   1. Cloudflare Access (kids-library Access policy) — must be a
- *      group member.
- *   2. requirePrincipal() — must be in env.PRINCIPAL_EMAILS. Set
- *      the env var via Cloudflare Pages dashboard (Settings →
- *      Environment variables) before first import.
+ * Gating is entirely at Cloudflare Access (single source of truth):
+ * the per-path Access app on `<host>/api/admin/*` only allows the
+ * `principals` group. By the time this function runs, the request
+ * has already cleared SSO + group membership + the JWT-verifying
+ * middleware. No in-code email allowlist.
  *
  * The legacy data shape uses readsByKid:{kidId:count}; we normalize
  * into book_reads. Photo data-URLs in `cover` are SKIPPED — they're
@@ -21,8 +20,8 @@
  */
 
 import {
-  guardPreviewWrites, handler, json, jsonError, readJson,
-  requirePrincipal, type ApiContext,
+  currentEmail, guardPreviewWrites, handler, json, jsonError, readJson,
+  type ApiContext,
 } from '../_lib';
 
 interface LegacyExport {
@@ -53,7 +52,10 @@ interface ImportSummary {
 
 export const onRequestPost = handler(async (ctx: ApiContext) => {
   guardPreviewWrites(ctx);
-  const email = requirePrincipal(ctx);
+  // Caller is already a verified principal (per-path Access app gates
+  // this prefix to the `principals` group). We just record their email
+  // for created_by_email attribution.
+  const email = currentEmail(ctx.request);
 
   const body = await readJson<LegacyExport>(ctx.request);
   if (!Array.isArray(body.kids) || !Array.isArray(body.books)) {

@@ -12,8 +12,6 @@ export interface Env {
   DB: D1Database;
   ISBN_CACHE: KVNamespace;
   COVERS: R2Bucket;
-  /** Comma-separated list of emails allowed to call /api/admin/*. Set via Pages env vars; unset = no one can import. */
-  PRINCIPAL_EMAILS?: string;
   /** Set by Cloudflare on every Pages build; we use it for the preview-write-guard. */
   CF_PAGES_BRANCH?: string;
 }
@@ -76,23 +74,6 @@ export function handler(fn: (ctx: ApiContext) => Promise<Response>): (ctx: ApiCo
 /** The verified email from Cf-Access-Authenticated-User-Email. Middleware already passed the JWT, so this is trustworthy. */
 export function currentEmail(req: Request): string {
   return req.headers.get('Cf-Access-Authenticated-User-Email') ?? '';
-}
-
-/** Throw 403 unless the caller's email is in env.PRINCIPAL_EMAILS. Used for /api/admin/*. */
-export function requirePrincipal(ctx: ApiContext): string {
-  const email = currentEmail(ctx.request);
-  const allowed = (ctx.env.PRINCIPAL_EMAILS ?? '')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  if (!allowed.length) {
-    // Fail closed: if the env var isn't set, no one is a principal.
-    throw new HttpError('principal allowlist not configured', 503);
-  }
-  if (!allowed.includes(email.toLowerCase())) {
-    throw new HttpError('forbidden', 403);
-  }
-  return email;
 }
 
 /** Reject writes when running on a non-main preview branch — see web-hub/docs/data-storage.md. */
