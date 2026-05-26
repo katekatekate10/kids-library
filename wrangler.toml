@@ -1,0 +1,55 @@
+# wrangler config for local Pages dev and D1 migration management.
+#
+# Bindings here point at the PREVIEW resources by default so local dev
+# (`wrangler pages dev ./dist`) and ad-hoc commands can't accidentally
+# mutate prod. When applying migrations or interacting with prod data
+# explicitly, pass the prod database name to the CLI:
+#
+#   # Apply migrations
+#   wrangler d1 migrations apply kids-library-db-preview --remote   # preview
+#   wrangler d1 migrations apply kids-library-db          --remote   # prod
+#
+#   # Inspect prod data
+#   wrangler d1 execute kids-library-db --remote --command "SELECT COUNT(*) FROM books"
+#
+# The Pages production bindings themselves are wired in
+# web-hub/infrastructure/kids-library.tf (deployment_configs.production)
+# — Cloudflare uses those at runtime, NOT this file.
+
+name                   = "kids-library"
+compatibility_date     = "2026-04-15"
+pages_build_output_dir = "./dist"
+
+# Default (no --env flag) → preview bindings. Local dev and ad-hoc
+# wrangler commands hit preview by default; you have to opt into prod
+# explicitly with `--env production`.
+[[d1_databases]]
+binding       = "DB"
+database_name = "kids-library-db-preview"
+database_id   = "55ec24ec-8c32-4e45-b8c2-448466daad19"
+
+[[kv_namespaces]]
+binding = "ISBN_CACHE"
+id      = "90dac90c7e704707aa2123ffd2889071"
+
+[[r2_buckets]]
+binding     = "COVERS"
+bucket_name = "kids-library-covers-preview"
+
+# Prod bindings — opt in with `wrangler ... --env production`.
+# Used for `wrangler d1 migrations apply DB --env production --remote`
+# and any other deliberate prod operation.
+[env.production]
+
+[[env.production.d1_databases]]
+binding       = "DB"
+database_name = "kids-library-db"
+database_id   = "667c77a4-a81d-46c3-a664-2233075cee2d"
+
+[[env.production.kv_namespaces]]
+binding = "ISBN_CACHE"
+id      = "90dac90c7e704707aa2123ffd2889071"
+
+[[env.production.r2_buckets]]
+binding     = "COVERS"
+bucket_name = "kids-library-covers"
