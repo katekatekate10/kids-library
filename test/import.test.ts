@@ -17,9 +17,27 @@ import { onRequestPost } from '../functions/api/admin/import';
 import { createMockD1, type MockD1 } from './d1-mock';
 
 let db: MockD1;
+let covers: MockR2;
+
+interface MockR2 {
+  puts: Array<{ key: string; bytes: Uint8Array; contentType?: string }>;
+  put(key: string, value: ArrayBuffer | Uint8Array, opts?: { httpMetadata?: { contentType?: string } }): Promise<void>;
+}
+
+function createMockR2(): MockR2 {
+  const puts: MockR2['puts'] = [];
+  return {
+    puts,
+    async put(key, value, opts) {
+      const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+      puts.push({ key, bytes, contentType: opts?.httpMetadata?.contentType });
+    },
+  };
+}
 
 beforeEach(() => {
   db = createMockD1();
+  covers = createMockR2();
 });
 
 function buildCtx(body: unknown, headers: Record<string, string> = {}): any {
@@ -34,7 +52,7 @@ function buildCtx(body: unknown, headers: Record<string, string> = {}): any {
   });
   return {
     request: req,
-    env: { DB: db as any, CF_PAGES_BRANCH: 'main' },
+    env: { DB: db as any, COVERS: covers as any, CF_PAGES_BRANCH: 'main' },
     params: {},
     waitUntil() {},
     passThroughOnException() {},
@@ -42,6 +60,10 @@ function buildCtx(body: unknown, headers: Record<string, string> = {}): any {
     data: {},
   };
 }
+
+// 1×1 transparent PNG, as a real data URL.
+const ONE_PX_PNG_DATAURL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
 const SAMPLE_EXPORT = {
   version: 4,
@@ -67,7 +89,7 @@ const SAMPLE_EXPORT = {
       isbn: 'manual-abc123',
       title: '',
       authors: [],
-      cover: 'data:image/jpeg;base64,deadbeef',  // should be DROPPED
+      cover: ONE_PX_PNG_DATAURL,  // photo-only book; upload to R2, set cover_r2_key
       source: 'owned' as const,
       location: 'backstock' as const,
       addedDate: '2024-02-01T00:00:00Z',
@@ -90,6 +112,8 @@ describe('POST /api/admin/import', () => {
     expect(body.importedBy).toBe('alice@example.com');
     expect(body.summary.kids.inserted).toBe(2);
     expect(body.summary.books.inserted).toBe(2);
+    expect(body.summary.books.coversToR2).toBe(1);
+    expect(body.summary.books.coversFailed).toBe(0);
     expect(body.summary.reviews.inserted).toBe(1);
     expect(body.summary.reads.upserted).toBe(2);
 
@@ -119,15 +143,64 @@ describe('POST /api/admin/import', () => {
     ]);
   });
 
-  it('drops data-URL covers and reports them in summary.coversDropped', async () => {
+  it('uploads data-URL covers to R2 and records cover_r2_key', async () => {
     const res = await onRequestPost(buildCtx(SAMPLE_EXPORT));
     const body = await res.json() as any;
-    expect(body.summary.books.coversDropped).toBe(1);
+    expect(body.summary.books.coversToR2).toBe(1);
+    expect(body.summary.books.coversFailed).toBe(0);
 
-    const cover = db.raw.prepare(
-      `SELECT cover_url FROM books WHERE isbn = 'manual-abc123'`,
-    ).get() as { cover_url: string | null };
-    expect(cover.cover_url).toBeNull();
+    // R2 saw the put with the right key and content-type
+    expect(covers.puts).toHaveLength(1);
+    expect(covers.puts[0].key).toBe('covers/manual-abc123.jpg');
+    expect(covers.puts[0].contentType).toBe('image/png');
+    // The decoded bytes should be the PNG file (~70 bytes for a 1×1).
+    // We don't assert exact length — base64 alignment shifts by a byte
+    // depending on the encoder. As long as it's a reasonable image
+    // payload, we're good.
+    expect(covers.puts[0].bytes.length).toBeGreaterThan(50);
+    expect(covers.puts[0].bytes.length).toBeLessThan(200);
+    // First 8 bytes are the PNG signature: 89 50 4E 47 0D 0A 1A 0A
+    expect(Array.from(covers.puts[0].bytes.slice(0, 4))).toEqual([0x89, 0x50, 0x4E, 0x47]);
+
+    // DB row references the R2 key, not a cover_url
+    const row = db.raw.prepare(
+      `SELECT cover_url, cover_r2_key FROM books WHERE isbn = 'manual-abc123'`,
+    ).get() as { cover_url: string | null; cover_r2_key: string | null };
+    expect(row.cover_url).toBeNull();
+    expect(row.cover_r2_key).toBe('covers/manual-abc123.jpg');
+  });
+
+  it('counts coversFailed when the data URL is malformed', async () => {
+    const bad = {
+      version: 4,
+      kids: [],
+      books: [
+        {
+          isbn: 'manual-bad-cover',
+          title: 'Photo book with bad cover',
+          authors: [],
+          cover: 'data:image/jpeg;base64,!!!not-valid-base64!!!',
+          source: 'owned' as const,
+          location: 'backstock' as const,
+          addedDate: '2024-01-01T00:00:00Z',
+          readsByKid: {},
+        },
+      ],
+      reviews: [],
+    };
+    const res = await onRequestPost(buildCtx(bad));
+    const body = await res.json() as any;
+    expect(body.summary.books.coversFailed).toBe(1);
+    expect(body.summary.books.coversToR2).toBe(0);
+    expect(covers.puts).toHaveLength(0);
+
+    // Book row should still land — bad cover doesn't fail the whole import
+    const row = db.raw.prepare(
+      `SELECT title, cover_url, cover_r2_key FROM books WHERE isbn = 'manual-bad-cover'`,
+    ).get() as { title: string; cover_url: string | null; cover_r2_key: string | null };
+    expect(row.title).toBe('Photo book with bad cover');
+    expect(row.cover_url).toBeNull();
+    expect(row.cover_r2_key).toBeNull();
   });
 
   it('preserves external cover URLs', async () => {

@@ -12,11 +12,14 @@
  * has already cleared SSO + group membership + the JWT-verifying
  * middleware. No in-code email allowlist.
  *
- * The legacy data shape uses readsByKid:{kidId:count}; we normalize
- * into book_reads. Photo data-URLs in `cover` are SKIPPED — they're
- * too big to round-trip cheaply, and the corresponding R2 cover
- * upload can be redone post-import per book. External cover URLs
- * (https://...) are preserved.
+ * Data shape conversions:
+ *   - readsByKid:{kidId:count} → book_reads(kid_id, book_isbn, count)
+ *   - cover: external URL (https://...) → cover_url
+ *   - cover: data:image/jpeg;base64,... → decoded and uploaded to R2
+ *     at covers/<isbn>.jpg, with cover_r2_key recorded on the book row.
+ *     Photo-only books (typical for entries the user snapped on a
+ *     phone with no title/author) wouldn't render at all if we dropped
+ *     these — the image IS the entry.
  */
 
 import {
@@ -45,9 +48,25 @@ interface LegacyExport {
 
 interface ImportSummary {
   kids: { inserted: number; updated: number };
-  books: { inserted: number; updated: number; coversDropped: number };
+  books: { inserted: number; updated: number; coversToR2: number; coversFailed: number };
   reads: { upserted: number };
   reviews: { inserted: number; updated: number };
+}
+
+interface DecodedDataUrl { mime: string; bytes: Uint8Array }
+
+function parseDataUrl(s: string): DecodedDataUrl | null {
+  // data:image/jpeg;base64,<base64> — accept any image/* MIME
+  const m = s.match(/^data:([^;,]+);base64,(.+)$/);
+  if (!m) return null;
+  try {
+    const binary = atob(m[2]);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return { mime: m[1], bytes };
+  } catch {
+    return null;
+  }
 }
 
 export const onRequestPost = handler(async (ctx: ApiContext) => {
@@ -64,7 +83,7 @@ export const onRequestPost = handler(async (ctx: ApiContext) => {
 
   const summary: ImportSummary = {
     kids: { inserted: 0, updated: 0 },
-    books: { inserted: 0, updated: 0, coversDropped: 0 },
+    books: { inserted: 0, updated: 0, coversToR2: 0, coversFailed: 0 },
     reads: { upserted: 0 },
     reviews: { inserted: 0, updated: 0 },
   };
@@ -103,11 +122,27 @@ export const onRequestPost = handler(async (ctx: ApiContext) => {
     if (existingBookIsbns.has(b.isbn)) summary.books.updated++; else summary.books.inserted++;
 
     let coverUrl: string | null = null;
+    let coverR2Key: string | null = null;
     if (typeof b.cover === 'string') {
       if (b.cover.startsWith('data:')) {
-        // Legacy embedded data URL; too large to keep in D1. Drop it
-        // and let the principal re-upload via the cover endpoint.
-        summary.books.coversDropped++;
+        const decoded = parseDataUrl(b.cover);
+        if (decoded) {
+          const key = `covers/${b.isbn}.jpg`;
+          try {
+            await ctx.env.COVERS.put(key, decoded.bytes, {
+              httpMetadata: { contentType: decoded.mime || 'image/jpeg' },
+            });
+            coverR2Key = key;
+            summary.books.coversToR2++;
+          } catch (e) {
+            // Don't fail the whole import for one bad upload — record
+            // and move on. The book row still lands without a cover.
+            console.error('cover upload failed for', b.isbn, e);
+            summary.books.coversFailed++;
+          }
+        } else {
+          summary.books.coversFailed++;
+        }
       } else {
         coverUrl = b.cover;
       }
@@ -121,15 +156,16 @@ export const onRequestPost = handler(async (ctx: ApiContext) => {
     await db
       .prepare(`
         INSERT INTO books
-          (isbn, title, authors_json, subjects_json, publish_year, cover_url,
+          (isbn, title, authors_json, subjects_json, publish_year, cover_url, cover_r2_key,
            source, location, added_date, placed_on_shelf_at, last_shelf_stint, created_by_email)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(isbn) DO UPDATE SET
           title = excluded.title,
           authors_json = excluded.authors_json,
           subjects_json = excluded.subjects_json,
           publish_year = excluded.publish_year,
           cover_url = COALESCE(excluded.cover_url, books.cover_url),
+          cover_r2_key = COALESCE(excluded.cover_r2_key, books.cover_r2_key),
           source = excluded.source,
           location = excluded.location,
           added_date = excluded.added_date,
@@ -144,6 +180,7 @@ export const onRequestPost = handler(async (ctx: ApiContext) => {
         subjects.length ? JSON.stringify(subjects) : null,
         b.publishYear ?? null,
         coverUrl,
+        coverR2Key,
         b.source ?? 'owned',
         b.location ?? 'backstock',
         b.addedDate ?? new Date().toISOString(),
