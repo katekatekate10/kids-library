@@ -13,8 +13,16 @@ const { title = "Kids' Library" } = Astro.props;
     <meta name="theme-color" content="#f7f1e6" />
     <title>{title}</title>
 
-    <!-- PWA: installable from any modern browser; shell works offline once visited. -->
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- PWA: installable from any modern browser; shell works offline once visited.
+         crossorigin="use-credentials" tells the browser to send the
+         Cloudflare Access cookie when fetching the manifest. Without it,
+         Access 302s the manifest fetch and the install affordance silently
+         breaks. The icons referenced inside the manifest inherit the
+         manifest fetch's credentials mode, so they get the cookie too.
+         The plain favicon link below doesn't take crossorigin — its 302
+         just means no tab icon shows for unauthenticated requests, which
+         doesn't happen in practice anyway. -->
+    <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icon.svg" />
     <!-- iOS-specific: hide the Safari chrome when launched from home screen. -->

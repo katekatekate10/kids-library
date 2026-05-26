@@ -39,25 +39,7 @@ function getJwks(teamDomain: string) {
   return cachedJwks;
 }
 
-// PWA-only static assets. Browsers fetch the manifest and icon
-// WITHOUT cookies by default (no `crossorigin="use-credentials"`),
-// so if these go through Access they 302 to SSO and the install
-// affordance silently breaks. Carving them out is safe — they're
-// metadata/decoration with zero PII. /sw.js is the service worker
-// itself; carving it out means it can register even if cookies are
-// briefly absent. The rest of the app (including /, /api/*, every
-// real route) still goes through full Access + JWT verification.
-const PUBLIC_PATHS = new Set([
-  '/manifest.webmanifest',
-  '/icon.svg',
-  '/sw.js',
-]);
-
 export const onRequest: PagesFunction<Env> = async (context) => {
-  if (PUBLIC_PATHS.has(new URL(context.request.url).pathname)) {
-    return context.next();
-  }
-
   const teamDomain = context.env.ACCESS_TEAM_DOMAIN;
   const expectedAud = context.env.ACCESS_APP_AUD;
 
