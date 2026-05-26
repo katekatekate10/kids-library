@@ -7,7 +7,8 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "test": "vitest run"
   },
   "dependencies": {
     "astro": "^6.3.7",
@@ -15,7 +16,10 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20251101.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^12.10.0",
     "typescript": "^5.7.2",
+    "vitest": "^4.1.7",
     "wrangler": "^4.4.0"
   }
 }
