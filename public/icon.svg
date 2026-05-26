@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Kids' Library">
+  <!-- Background — accent color, rounded corners. Designed to look
+       OK as both a maskable and a standard icon by keeping the
+       artwork in the central safe zone (~80% of canvas). -->
+  <rect width="512" height="512" rx="96" fill="#b85c38"/>
+
+  <!-- Three book spines in the app's palette: --accent-soft, --teal,
+       and a warm yellow that ties to the read-count badge color. -->
+  <g transform="translate(96, 120)">
+    <rect x="0"   width="92" height="272" rx="10" fill="#f3d9c8"/>
+    <rect x="114" width="92" height="272" rx="10" fill="#235e6f"/>
+    <rect x="228" width="92" height="272" rx="10" fill="#d99a32"/>
+  </g>
+
+  <!-- Subtle shelf line beneath the books for grounding. -->
+  <rect x="80" y="404" width="352" height="14" rx="4" fill="#f7f1e6" opacity="0.85"/>
+</svg>
