@@ -20,6 +20,8 @@ interface RunResult { meta: { changes: number; last_row_id: number } }
 
 export interface MockD1 {
   prepare(sql: string): MockStatement;
+  /** D1's batch: run multiple prepared statements atomically. */
+  batch<T = unknown>(statements: MockBound[]): Promise<Array<{ results: T[]; meta: RunResult['meta'] }>>;
   /** Direct SQLite handle for assertions. Not part of D1's API. */
   raw: Database.Database;
 }
@@ -68,6 +70,20 @@ export function createMockD1(): MockD1 {
     prepare(sql: string) {
       const stmt = db.prepare(sql);
       return wrap(stmt);
+    },
+    async batch<T>(statements: MockBound[]) {
+      // Serial execution to match D1's batch ordering. better-sqlite3
+      // is synchronous so atomicity within a single Node tick is fine
+      // for the test surface — we're verifying the SQL semantics of
+      // each statement, not real transaction rollback. Tests that need
+      // true transactional rollback assertions should use a real D1
+      // (Miniflare via @cloudflare/vitest-pool-workers).
+      const out: Array<{ results: T[]; meta: RunResult['meta'] }> = [];
+      for (const s of statements) {
+        const r = await s.run();
+        out.push({ results: [] as T[], meta: r.meta });
+      }
+      return out;
     },
     raw: db,
   };

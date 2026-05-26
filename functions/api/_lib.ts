@@ -12,6 +12,8 @@ export interface Env {
   DB: D1Database;
   ISBN_CACHE: KVNamespace;
   COVERS: R2Bucket;
+  /** For the OCR-cover-refine feature. Set via `wrangler pages secret put`. Unset = /api/books/[isbn]/refine returns 503. */
+  ANTHROPIC_API_KEY?: string;
   /** Set by Cloudflare on every Pages build; we use it for the preview-write-guard. */
   CF_PAGES_BRANCH?: string;
 }

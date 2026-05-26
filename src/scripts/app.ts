@@ -56,6 +56,8 @@ declare global {
     openBook: (isbn: string) => void;
     editBookMeta: (isbn: string) => void;
     saveBookMeta: (isbn: string) => void;
+    refineFromCover: (isbn: string) => void;
+    applyRefine: (isbn: string) => void;
     bumpRead: (isbn: string, kidId: string) => void;
     unbumpRead: (isbn: string, kidId: string) => void;
     toggleLocation: (isbn: string) => void;
@@ -411,6 +413,7 @@ window.openBook = function (isbn: string) {
         <h2 style="margin:0;">${bk.title ? escapeHtml(bk.title) : '<i style="color:var(--muted);">(no title yet)</i>'}</h2>
         <div class="muted" style="margin-top:2px;">${escapeHtml((bk.authors || []).join(', '))}${bk.publishYear ? ' · ' + escapeHtml(bk.publishYear) : ''}</div>
         ${!bk.title || !((bk.authors || []).length) ? `<button class="ghost small" style="margin-top:6px;" onclick="editBookMeta('${isbn}')">+ Add title &amp; author</button>` : `<button class="ghost small" style="margin-top:6px;" onclick="editBookMeta('${isbn}')">Edit title / author</button>`}
+        ${bk.cover && (!bk.title || !((bk.authors || []).length)) ? `<button class="ghost small" style="margin-top:6px; margin-left:6px;" onclick="refineFromCover('${isbn}')">✨ Refine from cover</button>` : ''}
         <div class="pill-row" style="margin-top:6px;">
           ${locationBadge}
           <span class="badge reads">📖 ${totalReads(bk)} reads total</span>
@@ -481,6 +484,121 @@ window.saveBookMeta = async function (isbn: string) {
     Object.assign(bk, updated);
     window.openBook(isbn); renderLibrary(); toast('Saved');
   } catch (e) { toast((e as Error).message); }
+};
+
+interface RefineResponse {
+  extracted: { title: string | null; author: string | null; illustrator: string | null; confidence: 'high' | 'medium' | 'low' } | null;
+  isbnCandidates: Array<{ isbn: string; title: string; author: string; cover?: string }>;
+  model: string;
+}
+
+let _refineState: { isbn: string; result: RefineResponse } | null = null;
+
+window.refineFromCover = async function (isbn: string) {
+  const bk = state.books.find(b => b.isbn === isbn);
+  if (!bk) return;
+  openModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>✨ Refining from cover…</h2>
+    <p class="muted">Asking Claude to read the cover photo. Usually 2-5 seconds.</p>
+    <div class="cover" style="width:90px; height:135px; aspect-ratio:auto; ${bk.cover ? `background:url('${escapeAttr(bk.cover)}') center/cover;` : 'background:#ece2d2;'} border-radius:8px; margin: 10px 0;"></div>
+  `);
+
+  let result: RefineResponse;
+  try {
+    result = await api<RefineResponse>('POST', `/api/books/${encodeURIComponent(isbn)}/refine`);
+  } catch (e) {
+    toast('Refine failed: ' + (e as Error).message);
+    closeModal();
+    return;
+  }
+  _refineState = { isbn, result };
+
+  if (!result.extracted) {
+    openModal(`
+      <button class="close" onclick="closeModal()">×</button>
+      <h2>Couldn't read the cover</h2>
+      <p class="muted">The model couldn't extract a title or author from this photo. Edit manually below.</p>
+      <div class="row" style="margin-top:14px;">
+        <button class="ghost" onclick="editBookMeta('${isbn}')">Edit manually</button>
+        <button class="primary" onclick="closeModal()">Close</button>
+      </div>
+    `);
+    return;
+  }
+
+  const ex = result.extracted;
+  const confBadge = ex.confidence === 'high' ? 'shelf' : (ex.confidence === 'medium' ? 'teal' : 'backstock');
+  const candidatesHtml = result.isbnCandidates.length
+    ? result.isbnCandidates.map((c, i) => `
+        <label style="display:flex; gap:10px; align-items:center; padding:8px; border:1px solid var(--border); border-radius:8px; margin-top:6px; cursor:pointer;">
+          <input type="radio" name="isbnPick" value="${escapeAttr(c.isbn)}" ${i === 0 ? 'checked' : ''} />
+          <div class="cover" style="width:36px; height:54px; aspect-ratio:auto; flex:0 0 36px; ${c.cover ? `background:url('${escapeAttr(c.cover)}') center/cover;` : 'background:#ece2d2;'} border-radius:4px;"></div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:600; font-size:14px;">${escapeHtml(c.title)}</div>
+            <div class="muted" style="font-size:12px;">${escapeHtml(c.author)}</div>
+            <div class="muted" style="font-size:11px; font-family: ui-monospace, monospace;">${escapeHtml(c.isbn)}</div>
+          </div>
+        </label>`).join('')
+      + `<label style="display:flex; gap:10px; align-items:center; padding:8px; border:1px solid var(--border); border-radius:8px; margin-top:6px; cursor:pointer;">
+          <input type="radio" name="isbnPick" value="" />
+          <div style="flex:1;">
+            <div style="font-weight:600;">Keep current ID (${escapeHtml(isbn)})</div>
+            <div class="muted" style="font-size:12px;">Save title/author only; don't replace the placeholder ISBN.</div>
+          </div>
+        </label>`
+    : `<p class="muted">No ISBN matches found in openlibrary. Title and author will still be saved.</p>`;
+
+  openModal(`
+    <button class="close" onclick="closeModal()">×</button>
+    <h2>✨ Refine suggestions</h2>
+    <span class="badge ${confBadge}">${escapeHtml(ex.confidence)} confidence</span>
+    <span class="muted" style="font-size:11px; margin-left:6px;">via ${escapeHtml(result.model)}</span>
+
+    <label style="margin-top:14px;">Title</label>
+    <input type="text" id="refineTitle" value="${escapeAttr(ex.title ?? '')}" />
+    <label>Author</label>
+    <input type="text" id="refineAuthor" value="${escapeAttr(ex.author ?? '')}" />
+    ${ex.illustrator ? `<p class="muted" style="margin-top:6px;">Illustrator detected: ${escapeHtml(ex.illustrator)} (add to author field manually if you want)</p>` : ''}
+
+    <h3 style="margin-top:14px;">ISBN candidates</h3>
+    ${candidatesHtml}
+
+    <div class="row" style="margin-top:14px;">
+      <button class="primary" onclick="applyRefine('${isbn}')">Accept</button>
+      <button class="ghost" onclick="closeModal()">Cancel</button>
+    </div>
+  `);
+};
+
+window.applyRefine = async function (isbn: string) {
+  if (!_refineState || _refineState.isbn !== isbn) {
+    toast('Refine state lost — try again');
+    closeModal();
+    return;
+  }
+  const title = (document.getElementById('refineTitle') as HTMLInputElement).value.trim();
+  const authorStr = (document.getElementById('refineAuthor') as HTMLInputElement).value.trim();
+  const authors = authorStr ? authorStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const pickedIsbn = (document.querySelector<HTMLInputElement>('input[name="isbnPick"]:checked')?.value ?? '').trim();
+
+  try {
+    await api('PATCH', `/api/books/${encodeURIComponent(isbn)}`, { title, authors });
+    let finalIsbn = isbn;
+    if (pickedIsbn && pickedIsbn !== isbn) {
+      const rekeyRes = await api<{ newIsbn: string }>('POST', `/api/books/${encodeURIComponent(isbn)}/rekey`, { newIsbn: pickedIsbn });
+      finalIsbn = rekeyRes.newIsbn;
+    }
+    await refreshState();
+    renderLibrary();
+    toast(pickedIsbn && pickedIsbn !== isbn ? `Refined + linked to ${finalIsbn}` : 'Refined');
+    closeModal();
+    setTimeout(() => window.openBook(finalIsbn), 100);
+  } catch (e) {
+    toast('Apply failed: ' + (e as Error).message);
+  } finally {
+    _refineState = null;
+  }
 };
 
 window.bumpRead = async function (isbn: string, kidId: string) {
