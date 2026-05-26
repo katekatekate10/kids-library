@@ -133,8 +133,10 @@ export interface Kid {
 export interface Book {
   isbn: string;
   title?: string | null;
-  author?: string | null;
-  cover?: string | null;         // resolved URL (external or /api/.../cover)
+  authors?: string[];                  // canonical: array. Legacy app stored authors as an array.
+  subjects?: string[];                 // openlibrary tag list (e.g., "Picture books", "Friendship")
+  publishYear?: string | null;
+  cover?: string | null;               // resolved URL (external or /api/.../cover)
   source: 'owned' | 'library';
   location: 'accessible' | 'backstock';
   addedDate: string;
@@ -170,6 +172,7 @@ interface KidRow {
 
 interface BookRow {
   isbn: string; title: string | null; author: string | null;
+  authors_json: string | null; subjects_json: string | null; publish_year: string | null;
   cover_url: string | null; cover_r2_key: string | null;
   source: 'owned' | 'library'; location: 'accessible' | 'backstock';
   added_date: string; placed_on_shelf_at: string | null;
@@ -198,8 +201,14 @@ export function bookFromRow(
   reads: Record<string, number>,
 ): Book {
   const cover = r.cover_r2_key ? `/api/books/${r.isbn}/cover` : r.cover_url;
+  // Prefer JSON-array columns; fall back to the legacy single-author column for any pre-0002 rows.
+  const authors = r.authors_json
+    ? (JSON.parse(r.authors_json) as string[])
+    : r.author ? [r.author] : [];
+  const subjects = r.subjects_json ? (JSON.parse(r.subjects_json) as string[]) : [];
   return {
-    isbn: r.isbn, title: r.title, author: r.author, cover,
+    isbn: r.isbn, title: r.title, authors, subjects,
+    publishYear: r.publish_year, cover,
     source: r.source, location: r.location,
     addedDate: r.added_date,
     placedOnShelfAt: r.placed_on_shelf_at,

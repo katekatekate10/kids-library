@@ -29,7 +29,10 @@ interface LegacyExport {
   version?: number;
   kids: Array<{ id: string; name: string; age?: number; interests?: string; notes?: string }>;
   books: Array<{
-    isbn: string; title?: string; author?: string; cover?: string | null;
+    isbn: string; title?: string;
+    authors?: string[]; subjects?: string[]; publishYear?: string;
+    author?: string;  // older imports may have single-author
+    cover?: string | null;
     source?: 'owned' | 'library'; location?: 'accessible' | 'backstock';
     addedDate?: string; placedOnShelfAt?: string | null;
     lastShelfStint?: any;
@@ -108,15 +111,22 @@ export const onRequestPost = handler(async (ctx: ApiContext) => {
       }
     }
 
+    const authors = Array.isArray(b.authors) && b.authors.length
+      ? b.authors
+      : (b.author ? [b.author] : []);
+    const subjects = Array.isArray(b.subjects) ? b.subjects : [];
+
     await db
       .prepare(`
         INSERT INTO books
-          (isbn, title, author, cover_url, source, location, added_date,
-           placed_on_shelf_at, last_shelf_stint, created_by_email)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (isbn, title, authors_json, subjects_json, publish_year, cover_url,
+           source, location, added_date, placed_on_shelf_at, last_shelf_stint, created_by_email)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(isbn) DO UPDATE SET
           title = excluded.title,
-          author = excluded.author,
+          authors_json = excluded.authors_json,
+          subjects_json = excluded.subjects_json,
+          publish_year = excluded.publish_year,
           cover_url = COALESCE(excluded.cover_url, books.cover_url),
           source = excluded.source,
           location = excluded.location,
@@ -128,7 +138,9 @@ export const onRequestPost = handler(async (ctx: ApiContext) => {
       .bind(
         b.isbn,
         b.title ?? null,
-        b.author ?? null,
+        authors.length ? JSON.stringify(authors) : null,
+        subjects.length ? JSON.stringify(subjects) : null,
+        b.publishYear ?? null,
         coverUrl,
         b.source ?? 'owned',
         b.location ?? 'backstock',

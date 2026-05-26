@@ -5,7 +5,9 @@ import {
 
 interface UpdateBookBody {
   title?: string | null;
-  author?: string | null;
+  authors?: string[];
+  subjects?: string[];
+  publishYear?: string | null;
   cover?: string | null;                 // external URL only; uploads go to cover.ts
   source?: 'owned' | 'library';
   location?: 'accessible' | 'backstock';
@@ -15,7 +17,8 @@ interface UpdateBookBody {
 async function loadBook(db: D1Database, isbn: string): Promise<Book | null> {
   const row = await db
     .prepare(`
-      SELECT isbn, title, author, cover_url, cover_r2_key, source, location,
+      SELECT isbn, title, author, authors_json, subjects_json, publish_year,
+             cover_url, cover_r2_key, source, location,
              added_date, placed_on_shelf_at, last_shelf_stint
       FROM books WHERE isbn = ?
     `)
@@ -34,10 +37,12 @@ export const onRequestPatch = handler(async (ctx: ApiContext) => {
   const sets: string[] = [];
   const args: unknown[] = [];
 
-  if ('title' in body)    { sets.push('title = ?');     args.push(body.title); }
-  if ('author' in body)   { sets.push('author = ?');    args.push(body.author); }
-  if ('cover' in body)    { sets.push('cover_url = ?'); args.push(body.cover); sets.push('cover_r2_key = NULL'); }
-  if ('source' in body)   { sets.push('source = ?');    args.push(body.source); }
+  if ('title' in body)       { sets.push('title = ?');         args.push(body.title); }
+  if ('authors' in body)     { sets.push('authors_json = ?');  args.push(body.authors?.length ? JSON.stringify(body.authors) : null); }
+  if ('subjects' in body)    { sets.push('subjects_json = ?'); args.push(body.subjects?.length ? JSON.stringify(body.subjects) : null); }
+  if ('publishYear' in body) { sets.push('publish_year = ?');  args.push(body.publishYear); }
+  if ('cover' in body)       { sets.push('cover_url = ?');     args.push(body.cover); sets.push('cover_r2_key = NULL'); }
+  if ('source' in body)      { sets.push('source = ?');        args.push(body.source); }
   if ('location' in body) {
     sets.push('location = ?'); args.push(body.location);
     // Moving onto the accessible shelf stamps placed_on_shelf_at; moving off clears it.

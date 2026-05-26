@@ -23,7 +23,8 @@ export const onRequestGet = handler(async (ctx: ApiContext) => {
   const [kids, books, reviews] = await Promise.all([
     db.prepare('SELECT id, name, age, interests, notes FROM kids ORDER BY name').all(),
     db.prepare(`
-      SELECT isbn, title, author, cover_url, cover_r2_key, source, location,
+      SELECT isbn, title, author, authors_json, subjects_json, publish_year,
+             cover_url, cover_r2_key, source, location,
              added_date, placed_on_shelf_at, last_shelf_stint
       FROM books
       ORDER BY added_date DESC

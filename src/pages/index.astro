@@ -2,24 +2,186 @@
 import Layout from '../layouts/Layout.astro';
 ---
 <Layout>
+  <header>
+    <h1>The Family Library</h1>
+    <div class="tagline">Scan • Review • Rotate • Recommend</div>
+  </header>
+
   <main>
-    <h1>Kids' Library</h1>
-    <p class="tagline">Scaffold is up. Data layer is next.</p>
-    <p>Signed in as <b id="email">(loading…)</b>.</p>
-    <p style="color: var(--muted); margin-top: 24px;">
-      The old app is still live at
-      <a href="https://falkizar.github.io/kids-library/">falkizar.github.io/kids-library</a>
-      until we explicitly deprecate it.
-    </p>
-    <script is:inline>
-      fetch('/api/me')
-        .then((r) => r.json())
-        .then((d) => {
-          document.getElementById('email').textContent = d.email || '(no email header)';
-        })
-        .catch(() => {
-          document.getElementById('email').textContent = '(api error)';
-        });
-    </script>
+    <!-- LIBRARY TAB -->
+    <section class="tab" id="tab-library">
+      <div class="card">
+        <h3>Find a book</h3>
+        <div class="row">
+          <input type="text" id="libSearch" placeholder="Search title or author…" />
+          <button class="secondary small" id="btnLibScan">📷 Scan</button>
+        </div>
+        <h3 style="margin-top:10px;">Filter by reader</h3>
+        <div class="pill-row" id="kidFilterRow">
+          <button class="pill" data-filter="all" aria-selected="true">All books</button>
+        </div>
+        <h3 style="margin-top:10px;">Status</h3>
+        <div class="pill-row">
+          <button class="pill" data-loc="all" aria-selected="true">All locations</button>
+          <button class="pill" data-loc="accessible">On shelf</button>
+          <button class="pill" data-loc="backstock">Backstock</button>
+          <button class="pill" data-loc="library">Library books</button>
+        </div>
+        <div class="pill-row">
+          <button class="pill" data-status="all" aria-selected="true">Any read status</button>
+          <button class="pill" data-status="read">Reviewed</button>
+          <button class="pill" data-status="unread">Not reviewed</button>
+          <button class="pill" data-status="untitled">Needs title</button>
+        </div>
+      </div>
+      <div id="bookGrid" class="book-grid"></div>
+      <div id="libEmpty" class="empty" style="display:none;">
+        <div class="big-ico">📚</div>
+        <p>No books match. Tap <b>Add</b> at the bottom to add one.</p>
+      </div>
+    </section>
+
+    <!-- ADD TAB -->
+    <section class="tab" id="tab-add">
+      <div class="card">
+        <h2>Scan a barcode</h2>
+        <p class="muted">Point the camera at the barcode (the one starting with 978…). The first scan asks for camera permission.</p>
+        <div id="scanWrap">
+          <video id="video" autoplay playsinline muted></video>
+          <div class="reticle"></div>
+          <div class="scan-hint">Center the barcode</div>
+        </div>
+        <div class="row" style="margin-top: 10px;">
+          <button class="primary" id="btnStartScan">📷 Scan barcode</button>
+          <button class="ghost" id="btnStopScan" style="display:none;">Stop</button>
+        </div>
+        <div id="scanFallback" class="muted" style="margin-top: 8px;"></div>
+      </div>
+
+      <div id="lookupResult"></div>
+
+      <div class="card">
+        <h2>Or add by hand</h2>
+        <p class="muted">Choose how you want to enter this book.</p>
+        <div class="pill-row" id="manualModePicker">
+          <button class="pill" data-mode="isbn" aria-selected="true">By ISBN</button>
+          <button class="pill" data-mode="photo">By cover photo</button>
+          <button class="pill" data-mode="text">By title & author</button>
+        </div>
+
+        <div id="manual-isbn" class="manual-section active">
+          <label>ISBN-13 (13 digits, starts with 978 or 979)</label>
+          <div class="row">
+            <input type="text" inputmode="numeric" id="manualIsbn" placeholder="9780399226908" />
+            <button class="secondary" id="btnLookup">Look up</button>
+          </div>
+        </div>
+
+        <div id="manual-photo" class="manual-section">
+          <p class="muted">For books without barcodes (board books, older editions). Snap the cover and save — title/author are <b>optional</b>. Photo-only saves go directly to your sticky default location, so you can batch through a stack and add titles later.</p>
+          <label>Cover photo</label>
+          <input type="file" id="coverPhotoInput" accept="image/*" capture="environment" />
+          <div id="coverPhotoPreview" class="photo-preview" style="display:none;"></div>
+          <label>Title <span class="muted" style="font-weight:normal;">(optional)</span></label>
+          <input type="text" id="photoTitle" placeholder="Leave blank to batch-process later" />
+          <label>Author <span class="muted" style="font-weight:normal;">(optional)</span></label>
+          <input type="text" id="photoAuthor" placeholder="Margaret Wise Brown" />
+          <button class="primary" id="btnSavePhotoBook" style="margin-top:10px;">Save photo</button>
+        </div>
+
+        <div id="manual-text" class="manual-section">
+          <p class="muted">For when you don't have the book in hand or there's no cover to photograph.</p>
+          <label>Title</label>
+          <input type="text" id="textTitle" placeholder="The Snowy Day" />
+          <label>Author</label>
+          <input type="text" id="textAuthor" placeholder="Ezra Jack Keats" />
+          <button class="primary" id="btnSaveTextBook" style="margin-top:10px;">Add to library</button>
+        </div>
+      </div>
+
+      <div class="card" id="recentScansCard" style="display:none;">
+        <h3>Recently added</h3>
+        <div id="recentScans"></div>
+      </div>
+    </section>
+
+    <!-- KIDS TAB -->
+    <section class="tab" id="tab-kids">
+      <div class="card">
+        <h2>Your readers</h2>
+        <p class="muted">Add each kid with their age and interests — the more you note, the better the recommendations.</p>
+        <div id="kidsList"></div>
+        <button class="primary" id="btnAddKid" style="margin-top: 12px;">+ Add a kid</button>
+      </div>
+    </section>
+
+    <!-- ROTATE TAB -->
+    <section class="tab" id="tab-rotate">
+      <div class="card">
+        <h2>Plan a rotation</h2>
+        <p class="muted">Owned books currently on your accessible shelves. Library books are excluded (they go back to the library, not to backstock). For each: <b>Keep</b>, <b>Hit</b> (loved, retire before stale), or <b>Ignored</b> (didn't bite). Then I'll suggest backstock books to bring forward.</p>
+        <div id="rotateList"></div>
+        <div id="rotateEmpty" class="empty" style="display:none;">
+          <div class="big-ico">🪑</div>
+          <p>Nothing's on the accessible shelf right now. Tap a book in <b>Library</b> and move it onto the shelf.</p>
+        </div>
+        <div id="rotateActions" class="row" style="margin-top: 14px; display:none;">
+          <button class="primary" id="btnRotateBuildPrompt">✨ Build rotation prompt</button>
+          <button class="secondary" id="btnRotateApply">↩️ Apply moves</button>
+        </div>
+        <div id="rotatePromptOut"></div>
+      </div>
+    </section>
+
+    <!-- RECOMMEND TAB -->
+    <section class="tab" id="tab-recommend">
+      <div class="card">
+        <h2>Get recommendations</h2>
+        <p class="muted">Pick a kid (or "everyone") and I'll build a prompt to paste into chat. I'll use their reviews, age, interests, and read history to suggest new books — and I can search the web for current titles, award winners, and series next-reads.</p>
+        <div id="recommendKidPicker" class="pill-row"></div>
+        <div id="recommendOutput" style="margin-top: 12px;"></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS TAB -->
+    <section class="tab" id="tab-settings">
+      <div class="card">
+        <h2>Backup &amp; sync</h2>
+        <p class="muted">Export pulls the current family library as JSON. Import re-uploads a JSON export to the family D1 (principal-only).</p>
+        <div class="row" style="margin-top: 8px;">
+          <button class="ghost small" id="btnExport">⬇️ Export JSON</button>
+          <button class="ghost small" id="btnImport">⬆️ Import JSON</button>
+        </div>
+        <input type="file" id="importFile" accept="application/json" style="display:none;" />
+      </div>
+      <div class="card">
+        <h2>About</h2>
+        <p class="muted">Data lives in the family D1 database, gated by Cloudflare Access. Last scan choice is remembered per-device in localStorage.</p>
+      </div>
+      <div class="card">
+        <h2>Danger zone</h2>
+        <p class="muted">No in-app clear — drop D1 tables from the Cloudflare dashboard or via <code>wrangler d1 execute</code> if you really need to start over.</p>
+        <button class="danger small" id="btnClear">Clear all data</button>
+      </div>
+    </section>
   </main>
+
+  <nav class="tabs" role="tablist">
+    <button data-tab="library" aria-selected="true"><span class="ico">📚</span>Library</button>
+    <button data-tab="add"><span class="ico">➕</span>Add</button>
+    <button data-tab="kids"><span class="ico">🧒</span>Kids</button>
+    <button data-tab="rotate"><span class="ico">🔄</span>Rotate</button>
+    <button data-tab="recommend"><span class="ico">✨</span>Recs</button>
+    <button data-tab="settings"><span class="ico">⚙️</span>Settings</button>
+  </nav>
+
+  <div class="modal-backdrop" id="modal">
+    <div class="modal" id="modalContent"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    import '../scripts/app.ts';
+  </script>
 </Layout>

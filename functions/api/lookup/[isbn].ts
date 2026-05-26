@@ -20,7 +20,9 @@ const TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
 interface LookupResult {
   isbn: string;
   title?: string;
-  author?: string;
+  authors?: string[];
+  subjects?: string[];
+  publishYear?: string | null;
   cover?: string | null;
   source: 'openlibrary' | 'google-books' | 'cache';
 }
@@ -65,7 +67,11 @@ async function tryOpenLibrary(isbn: string): Promise<LookupResult | null> {
   return {
     isbn,
     title: d.title,
-    author: Array.isArray(d.authors) && d.authors[0] ? d.authors[0].name : undefined,
+    authors: Array.isArray(d.authors) ? d.authors.map((a: { name: string }) => a.name).filter(Boolean) : [],
+    subjects: Array.isArray(d.subjects)
+      ? d.subjects.slice(0, 8).map((s: { name: string }) => s.name).filter(Boolean)
+      : [],
+    publishYear: d.publish_date ? (String(d.publish_date).match(/\d{4}/)?.[0] ?? null) : null,
     cover:
       (d.cover && (d.cover.medium || d.cover.large || d.cover.small)) ||
       `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`,
@@ -84,7 +90,9 @@ async function tryGoogleBooks(isbn: string): Promise<LookupResult | null> {
   return {
     isbn,
     title: v.title,
-    author: Array.isArray(v.authors) ? v.authors.join(', ') : undefined,
+    authors: Array.isArray(v.authors) ? v.authors : [],
+    subjects: Array.isArray(v.categories) ? v.categories : [],
+    publishYear: v.publishedDate ? String(v.publishedDate).slice(0, 4) : null,
     cover: v.imageLinks ? (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail || null) : null,
     source: 'google-books',
   };
