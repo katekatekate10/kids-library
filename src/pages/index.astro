@@ -1,0 +1,17 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const email = Astro.locals.userEmail;
+---
+<Layout>
+  <main>
+    <h1>Kids' Library</h1>
+    <p class="tagline">Scaffold is up. Data layer is next.</p>
+    <p>Signed in as <b>{email || '(no email header)'}</b>.</p>
+    <p style="color: var(--muted); margin-top: 24px;">
+      The old app is still live at
+      <a href="https://falkizar.github.io/kids-library/">falkizar.github.io/kids-library</a>
+      until we explicitly deprecate it.
+    </p>
+  </main>
+</Layout>
