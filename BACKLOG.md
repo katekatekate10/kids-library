@@ -58,3 +58,44 @@ saves so the user gets a one-tap suggestion immediately, not just
 during batch cleanup.
 
 ---
+
+## Retrofit `/api/admin/import` onto the `get-identity` pattern
+
+**What.** The next time we need an admin-style action (or the second time
+the import is run and the SSO warm-up tax annoys someone), build the
+`get-identity`-based `hasGroup()` helper described in
+[web-hub/docs/access-control.md → Pattern 2](https://github.com/Falkizar/web-hub/blob/main/docs/access-control.md#pattern-2-get-identity-from-the-worker-frequent-per-user-logic),
+then retrofit `/api/admin/import` onto it. Specifically:
+
+1. Drop the `cloudflare_zero_trust_access_application.kids_library_admin`
+   resource (and its policy) from `web-hub/infrastructure/kids-library.tf`.
+   This removes the per-path Access app entirely.
+2. Add a `GROUPS_CACHE` KV namespace (can reuse `ISBN_CACHE` — keys are
+   scoped under `groups:`) bound to the Pages project.
+3. Implement `userGroups()` + `hasGroup()` in `functions/api/_lib.ts`
+   per the pattern in access-control.md.
+4. In `functions/api/admin/import.ts`, replace the implicit "Access
+   already verified you're a principal" trust with an explicit
+   `if (!(await hasGroup(ctx, 'principals'))) return jsonError(...)`.
+5. Update the import-endpoint vitest tests to mock `userGroups` / the
+   `get-identity` fetch and cover the 403 path.
+
+**Why.** Two reasons.
+
+First, the **UX cost** — the user hit the SSO warm-up tax during the
+first import (silent CORS failure when the JS `fetch()` got a 302 to
+SSO; required a manual URL-bar navigation to warm the admin-app
+cookie). For a once-a-year import it's tolerable. For anything more
+frequent (or if another admin endpoint lands and the costs compound)
+it's not.
+
+Second, **building the helper unblocks the per-user features** queued
+in the hub doc (per-user tile view, per-row financials, per-kid chore
+filters). Better to design the helper for one real consumer first and
+extract from there than to build it in the abstract.
+
+**Sketch.** See the worked example in access-control.md. Estimated
+~1 hour: TF drop (5 min), helper (15 min), import.ts swap (10 min),
+tests (15 min), deploy + verify (15 min).
+
+---
